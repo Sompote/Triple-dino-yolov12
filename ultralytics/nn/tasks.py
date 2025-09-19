@@ -62,6 +62,7 @@ from ultralytics.nn.modules import (
     SCDown,
     Segment,
     TorchVision,
+    TripleInputConv,
     WorldDetect,
     v10Detect,
     A2C2f,
@@ -1061,6 +1062,11 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         elif m in {CBLinear, TorchVision, Index}:
             c2 = args[0]
             c1 = ch[f]
+            args = [c1, c2, *args[1:]]
+        elif m is TripleInputConv:
+            # Special handling for TripleInputConv - expects 9 input channels
+            c1 = 9  # Force 9 input channels for triple input
+            c2 = args[0]
             args = [c1, c2, *args[1:]]
         elif m is CBFuse:
             c2 = ch[f[-1]]

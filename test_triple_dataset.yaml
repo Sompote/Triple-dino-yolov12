@@ -1,0 +1,8 @@
+
+path: /Users/sompoteyouwai/env/yolo12triple/yolov12/test_triple_dataset
+train: images/train
+val: images/val
+triple_input: true
+nc: 1
+names:
+  0: test_object

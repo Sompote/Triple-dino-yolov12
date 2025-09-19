@@ -22,6 +22,7 @@ __all__ = (
     "Concat",
     "RepConv",
     "Index",
+    "TripleInputConv",
 )
 
 
@@ -348,3 +349,60 @@ class Index(nn.Module):
         Expects a list of tensors as input.
         """
         return x[self.index]
+
+
+class TripleInputConv(nn.Module):
+    """Triple input convolution layer that processes 9-channel input as three separate 3-channel images."""
+
+    def __init__(self, c1, c2, k=3, s=1, p=None, g=1, d=1, act=True):
+        """
+        Initialize TripleInputConv layer.
+        
+        Args:
+            c1: Input channels (should be 9 for triple input)
+            c2: Output channels
+            k: Kernel size
+            s: Stride
+            p: Padding
+            g: Groups (will be set to 1 for the branch convolutions)
+            d: Dilation
+            act: Activation function
+        """
+        super().__init__()
+        # Ensure we have 9 input channels for triple input
+        assert c1 == 9, f"TripleInputConv expects 9 input channels, got {c1}"
+        
+        # Three separate convolution branches for each 3-channel input
+        # Use g=1 for branch convolutions to avoid group compatibility issues
+        self.conv1 = Conv(3, c2, k, s, p, 1, d, act)
+        self.conv2 = Conv(3, c2, k, s, p, 1, d, act)
+        self.conv3 = Conv(3, c2, k, s, p, 1, d, act)
+        
+        # Optional fusion layer to combine features from three branches
+        self.fusion = Conv(c2 * 3, c2, 1, 1, 0, 1, 1, act)
+
+    def forward(self, x):
+        """
+        Forward pass for triple input.
+        
+        Args:
+            x: Input tensor with shape (batch, 9, height, width)
+            
+        Returns:
+            Fused features from three input branches
+        """
+        # Split 9-channel input into three 3-channel branches
+        x1 = x[:, 0:3, :, :]  # First image (channels 0-2)
+        x2 = x[:, 3:6, :, :]  # Second image (channels 3-5)  
+        x3 = x[:, 6:9, :, :]  # Third image (channels 6-8)
+        
+        # Process each branch independently
+        out1 = self.conv1(x1)
+        out2 = self.conv2(x2)
+        out3 = self.conv3(x3)
+        
+        # Concatenate and fuse features
+        combined = torch.cat([out1, out2, out3], dim=1)
+        fused = self.fusion(combined)
+        
+        return fused

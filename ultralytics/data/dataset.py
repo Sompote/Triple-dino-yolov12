@@ -60,6 +60,8 @@ class YOLODataset(BaseDataset):
         self.use_keypoints = task == "pose"
         self.use_obb = task == "obb"
         self.data = data
+        # Check for triple input mode
+        self.use_triple_input = data.get("triple_input", False) if data else False
         assert not (self.use_segments and self.use_keypoints), "Can not use both segments and keypoints."
         super().__init__(*args, **kwargs)
 
@@ -237,6 +239,7 @@ class YOLODataset(BaseDataset):
         for i, k in enumerate(keys):
             value = values[i]
             if k == "img":
+                # Handle both 3-channel and 9-channel images
                 value = torch.stack(value, 0)
             if k in {"masks", "keypoints", "bboxes", "cls", "segments", "obb"}:
                 value = torch.cat(value, 0)

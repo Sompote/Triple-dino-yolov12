@@ -186,6 +186,55 @@ class BaseDataset(Dataset):
 
         return self.ims[i], self.im_hw0[i], self.im_hw[i]
 
+    def load_triple_images(self, i, rect_mode=True):
+        """Loads triple images for dataset index 'i', returns concatenated 9-channel image."""
+        # Get paths for the three images
+        base_path = Path(self.im_files[i])
+        primary_path = base_path
+        detail1_path = base_path.parent / "detail1" / base_path.name
+        detail2_path = base_path.parent / "detail2" / base_path.name
+        
+        # Load primary image
+        primary_im = cv2.imread(str(primary_path))
+        if primary_im is None:
+            raise FileNotFoundError(f"Primary image not found: {primary_path}")
+        
+        # Load detail images with fallback to primary
+        if detail1_path.exists():
+            detail1_im = cv2.imread(str(detail1_path))
+        else:
+            detail1_im = primary_im.copy()  # Smart fallback
+            
+        if detail2_path.exists():
+            detail2_im = cv2.imread(str(detail2_path))
+        else:
+            detail2_im = primary_im.copy()  # Smart fallback
+            
+        # Ensure all images have same dimensions
+        h0, w0 = primary_im.shape[:2]
+        if detail1_im.shape[:2] != (h0, w0):
+            detail1_im = cv2.resize(detail1_im, (w0, h0), interpolation=cv2.INTER_LINEAR)
+        if detail2_im.shape[:2] != (h0, w0):
+            detail2_im = cv2.resize(detail2_im, (w0, h0), interpolation=cv2.INTER_LINEAR)
+            
+        # Apply resizing if needed
+        if rect_mode:  # resize long side to imgsz while maintaining aspect ratio
+            r = self.imgsz / max(h0, w0)  # ratio
+            if r != 1:  # if sizes are not equal
+                w, h = (min(math.ceil(w0 * r), self.imgsz), min(math.ceil(h0 * r), self.imgsz))
+                primary_im = cv2.resize(primary_im, (w, h), interpolation=cv2.INTER_LINEAR)
+                detail1_im = cv2.resize(detail1_im, (w, h), interpolation=cv2.INTER_LINEAR)
+                detail2_im = cv2.resize(detail2_im, (w, h), interpolation=cv2.INTER_LINEAR)
+        elif not (h0 == w0 == self.imgsz):  # resize by stretching image to square imgsz
+            primary_im = cv2.resize(primary_im, (self.imgsz, self.imgsz), interpolation=cv2.INTER_LINEAR)
+            detail1_im = cv2.resize(detail1_im, (self.imgsz, self.imgsz), interpolation=cv2.INTER_LINEAR)
+            detail2_im = cv2.resize(detail2_im, (self.imgsz, self.imgsz), interpolation=cv2.INTER_LINEAR)
+            
+        # Concatenate to create 9-channel image
+        triple_im = np.concatenate([primary_im, detail1_im, detail2_im], axis=2)
+        
+        return triple_im, (h0, w0), triple_im.shape[:2]
+
     def cache_images(self):
         """Cache images to memory or disk."""
         b, gb = 0, 1 << 30  # bytes of cached images, bytes per gigabytes
@@ -291,7 +340,13 @@ class BaseDataset(Dataset):
         """Get and return label information from the dataset."""
         label = deepcopy(self.labels[index])  # requires deepcopy() https://github.com/ultralytics/ultralytics/pull/1948
         label.pop("shape", None)  # shape is for rect, remove it
-        label["img"], label["ori_shape"], label["resized_shape"] = self.load_image(index)
+        
+        # Load image - use triple input loading if enabled
+        if hasattr(self, 'use_triple_input') and self.use_triple_input:
+            label["img"], label["ori_shape"], label["resized_shape"] = self.load_triple_images(index)
+        else:
+            label["img"], label["ori_shape"], label["resized_shape"] = self.load_image(index)
+            
         label["ratio_pad"] = (
             label["resized_shape"][0] / label["ori_shape"][0],
             label["resized_shape"][1] / label["ori_shape"][1],
