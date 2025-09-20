@@ -101,8 +101,8 @@ YOLOv12 surpasses all popular real-time object detectors in accuracy with compet
 ### Installation
 ```bash
 # Clone repository
-git clone https://github.com/sunsmarterjie/yolov12.git
-cd yolov12
+git clone https://github.com/Sompote/Triple-dino-yolov12.git
+cd Triple-dino-yolov12
 
 # Install flash attention (optional but recommended)
 wget https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.3/flash_attn-2.7.3+cu11torch2.2cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
