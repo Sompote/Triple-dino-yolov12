@@ -67,12 +67,12 @@ names: ...
 
 ## Dataset Structure
 
-For triple input datasets, organize your data as follows:
+For triple input datasets with proper train/validation/test splits, organize your data as follows:
 
 ```
 dataset_root/
 ├── images/
-│   ├── train2017/
+│   ├── train/                  # Training images
 │   │   ├── image1.jpg          # Primary images
 │   │   ├── image2.jpg
 │   │   ├── detail1/
@@ -81,14 +81,18 @@ dataset_root/
 │   │   └── detail2/
 │   │       ├── image1.jpg      # Detail images 2
 │   │       └── image2.jpg
-│   └── val2017/
-│       └── (same structure)
+│   ├── val/                    # Validation images (used during training)
+│   │   └── (same structure as train)
+│   └── test/                   # Test images (used for final evaluation)
+│       └── (same structure as train)
 └── labels/
-    ├── train2017/
+    ├── train/
     │   ├── image1.txt
     │   └── image2.txt
-    └── val2017/
-        └── (same structure)
+    ├── val/
+    │   └── (same structure as train)
+    └── test/
+        └── (same structure as train)
 ```
 
 **Smart Fallback Feature:**
@@ -97,7 +101,29 @@ dataset_root/
 
 ## Usage Examples
 
-### 1. Basic Model Creation
+### 1. Training with Proper Validation
+
+```bash
+# Train with validation during training
+python train_with_validation.py \
+    --model ultralytics/cfg/models/v12/yolov12_triple.yaml \
+    --data test_triple_dataset.yaml \
+    --epochs 100 \
+    --batch 16 \
+    --patience 50
+```
+
+### 2. Final Model Evaluation on Test Set
+
+```bash
+# After training, evaluate on test set for final performance metrics
+python test_model_evaluation.py \
+    --model runs/detect/yolov12_triple_training/weights/best.pt \
+    --data test_triple_dataset.yaml \
+    --split test
+```
+
+### 3. Python API Usage
 
 ```python
 from ultralytics import YOLO
@@ -105,16 +131,24 @@ from ultralytics import YOLO
 # Load triple input model
 model = YOLO('ultralytics/cfg/models/v12/yolov12_triple.yaml')
 
-# Train with triple input dataset
+# Train with automatic validation during training
 model.train(
-    data='ultralytics/cfg/datasets/coco_triple.yaml',
+    data='test_triple_dataset.yaml',
     epochs=100,
     imgsz=640,
-    batch=16
+    batch=16,
+    val=True,        # Enable validation during training
+    patience=50      # Early stopping patience
+)
+
+# After training, evaluate on test set
+test_results = model.val(
+    data='test_triple_dataset.yaml',
+    split='test'     # Use test set for final evaluation
 )
 ```
 
-### 2. Manual Triple Input Processing
+### 4. Manual Triple Input Processing
 
 ```python
 import torch
@@ -131,7 +165,7 @@ conv = TripleInputConv(c1=9, c2=64, k=3, s=2)
 output = conv(triple_input)  # Shape: [1, 64, 320, 320]
 ```
 
-### 3. Creating a Custom Triple Input Dataset
+### 5. Creating a Custom Triple Input Dataset
 
 ```python
 import cv2
@@ -142,8 +176,8 @@ def create_triple_dataset(base_dir):
     \"\"\"Create a triple input dataset structure.\"\"\"
     base_dir = Path(base_dir)
     
-    # Create directories
-    for split in ['train', 'val']:
+    # Create directories for train/val/test splits
+    for split in ['train', 'val', 'test']:
         (base_dir / f'images/{split}').mkdir(parents=True, exist_ok=True)
         (base_dir / f'images/{split}/detail1').mkdir(parents=True, exist_ok=True)
         (base_dir / f'images/{split}/detail2').mkdir(parents=True, exist_ok=True)

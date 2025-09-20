@@ -76,6 +76,11 @@ from .conv import (
     SpatialAttention,
     TripleInputConv,
 )
+from .dinov3 import (
+    DINOv3Backbone,
+    DINOv3TripleBackbone,
+    create_dinov3_backbone,
+)
 from .head import OBB, Classify, Detect, Pose, RTDETRDecoder, Segment, WorldDetect, v10Detect
 from .transformer import (
     AIFI,
@@ -163,5 +168,8 @@ __all__ = (
     "TorchVision",
     "Index",
     "A2C2f",
-    "TripleInputConv"
+    "TripleInputConv",
+    "DINOv3Backbone",
+    "DINOv3TripleBackbone",
+    "create_dinov3_backbone",
 )

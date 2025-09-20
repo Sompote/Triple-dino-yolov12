@@ -1,0 +1,572 @@
+"""
+DINOv3 integration module for YOLOv12 Triple Input.
+
+This module provides DINOv3 backbone integration for enhanced feature extraction
+in civil engineering applications. The DINOv3 features are used as a pre-backbone
+feature extractor before the standard YOLOv12 processing pipeline.
+
+Based on: https://github.com/facebookresearch/dinov3
+HuggingFace models: facebook/dinov3-small, facebook/dinov3-base, facebook/dinov3-large
+"""
+
+import torch
+import torch.nn as nn
+from pathlib import Path
+import warnings
+from typing import Optional, Dict, Any, Tuple, List
+
+try:
+    from transformers import AutoModel, AutoImageProcessor
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+    warnings.warn("transformers not available. Install with: pip install transformers")
+
+try:
+    import timm
+    TIMM_AVAILABLE = True
+except ImportError:
+    TIMM_AVAILABLE = False
+    warnings.warn("timm not available. Install with: pip install timm")
+
+
+class DINOv3Backbone(nn.Module):
+    """
+    DINOv3 backbone for feature extraction before YOLOv12 processing.
+    
+    This module integrates DINOv3 as a frozen feature extractor that processes
+    input images and outputs features compatible with YOLOv12's architecture.
+    """
+    
+    def __init__(
+        self,
+        model_name: str = "facebook/dinov3-small",
+        input_channels: int = 3,
+        output_channels: int = 64,
+        freeze: bool = True,
+        use_cls_token: bool = False,
+        patch_size: int = 14,
+        image_size: int = 224,
+        pretrained: bool = True
+    ):
+        """
+        Initialize DINOv3 backbone.
+        
+        Args:
+            model_name: HuggingFace model name or local path
+            input_channels: Number of input channels (3 for RGB, 9 for triple input)
+            output_channels: Number of output channels for YOLOv12 compatibility
+            freeze: Whether to freeze DINOv3 parameters
+            use_cls_token: Whether to use classification token
+            patch_size: Patch size for vision transformer
+            image_size: Input image size
+            pretrained: Whether to use pretrained weights
+        """
+        super().__init__()
+        
+        self.model_name = model_name
+        self.input_channels = input_channels
+        self.output_channels = output_channels
+        self.freeze = freeze
+        self.use_cls_token = use_cls_token
+        self.patch_size = patch_size
+        self.image_size = image_size
+        self.pretrained = pretrained
+        
+        # Initialize DINOv3 model
+        self.dino_model = None
+        self.processor = None
+        self._load_model()
+        
+        # Feature dimension from DINOv3
+        self.feature_dim = self._get_feature_dim()
+        
+        # Adaptation layers
+        self._build_adaptation_layers()
+        
+        # Handle non-RGB input channels
+        if input_channels != 3:
+            self._adapt_input_channels()
+        
+        # Freeze DINOv3 if requested
+        if self.freeze:
+            self._freeze_backbone()
+    
+    def _load_model(self):
+        """Load DINOv3 model from HuggingFace or local path."""
+        if not TRANSFORMERS_AVAILABLE:
+            raise ImportError("transformers is required for DINOv3. Install with: pip install transformers")
+        
+        try:
+            print(f"Loading DINOv3 model: {self.model_name}")
+            
+            # Load model and processor
+            self.dino_model = AutoModel.from_pretrained(
+                self.model_name,
+                trust_remote_code=True,
+                torch_dtype=torch.float32
+            )
+            
+            self.processor = AutoImageProcessor.from_pretrained(
+                self.model_name,
+                trust_remote_code=True
+            )
+            
+            print(f"✓ Successfully loaded DINOv3 model: {self.model_name}")
+            
+        except Exception as e:
+            print(f"Failed to load from HuggingFace, trying timm fallback: {e}")
+            self._load_timm_fallback()
+    
+    def _load_timm_fallback(self):
+        """Fallback to timm implementation if HuggingFace fails."""
+        if not TIMM_AVAILABLE:
+            raise ImportError("timm is required for DINOv3 fallback. Install with: pip install timm")
+        
+        try:
+            # Map HuggingFace names to timm names
+            timm_name_map = {
+                "facebook/dinov3-small": "vit_small_patch14_dinov3",
+                "facebook/dinov3-base": "vit_base_patch14_dinov3", 
+                "facebook/dinov3-large": "vit_large_patch14_dinov3"
+            }
+            
+            timm_name = timm_name_map.get(self.model_name, "vit_small_patch14_dinov3")
+            
+            self.dino_model = timm.create_model(
+                timm_name,
+                pretrained=self.pretrained,
+                num_classes=0,  # Remove classification head
+                global_pool=""  # Remove global pooling
+            )
+            
+            print(f"✓ Successfully loaded DINOv3 from timm: {timm_name}")
+            
+        except Exception as e:
+            print(f"Failed to load from timm: {e}")
+            raise RuntimeError("Could not load DINOv3 from either HuggingFace or timm")
+    
+    def _get_feature_dim(self) -> int:
+        """Get feature dimension from DINOv3 model."""
+        if hasattr(self.dino_model, 'config'):
+            # HuggingFace model
+            return self.dino_model.config.hidden_size
+        elif hasattr(self.dino_model, 'embed_dim'):
+            # timm model
+            return self.dino_model.embed_dim
+        else:
+            # Default dimensions for different model sizes
+            size_map = {
+                "small": 384,
+                "base": 768,
+                "large": 1024
+            }
+            for size, dim in size_map.items():
+                if size in self.model_name.lower():
+                    return dim
+            return 384  # Default to small
+    
+    def _build_adaptation_layers(self):
+        """Build layers to adapt DINOv3 features for YOLOv12."""
+        # Calculate number of patches
+        num_patches = (self.image_size // self.patch_size) ** 2
+        
+        # Feature adaptation layers
+        self.feature_adapter = nn.Sequential(
+            nn.LayerNorm(self.feature_dim),
+            nn.Linear(self.feature_dim, self.output_channels * 4),
+            nn.GELU(),
+            nn.Linear(self.output_channels * 4, self.output_channels),
+            nn.ReLU(inplace=True)
+        )
+        
+        # Spatial reshape for compatibility with conv layers
+        # Reshape from [B, N, C] to [B, C, H, W]
+        self.spatial_size = int(num_patches ** 0.5)
+        
+        # Optional convolution for spatial processing
+        self.spatial_conv = nn.Conv2d(
+            self.output_channels, 
+            self.output_channels, 
+            kernel_size=3, 
+            padding=1, 
+            bias=False
+        )
+        self.spatial_bn = nn.BatchNorm2d(self.output_channels)
+        self.spatial_act = nn.ReLU(inplace=True)
+    
+    def _adapt_input_channels(self):
+        """Adapt DINOv3 for non-RGB input (e.g., 9-channel triple input)."""
+        if self.input_channels == 3:
+            return
+        
+        print(f"Adapting DINOv3 for {self.input_channels}-channel input")
+        
+        # Create input adaptation layer
+        self.input_adapter = nn.Conv2d(
+            self.input_channels, 
+            3, 
+            kernel_size=1, 
+            bias=False
+        )
+        
+        # Initialize to preserve RGB information if input contains RGB channels
+        with torch.no_grad():
+            if self.input_channels >= 3:
+                # Initialize first 3 channels as identity
+                self.input_adapter.weight[:, :3, 0, 0] = torch.eye(3)
+                
+                # Initialize additional channels with small random weights
+                if self.input_channels > 3:
+                    nn.init.normal_(self.input_adapter.weight[:, 3:, 0, 0], std=0.02)
+            else:
+                # For input_channels < 3, use normal initialization
+                nn.init.normal_(self.input_adapter.weight, std=0.02)
+    
+    def _freeze_backbone(self):
+        """Freeze DINOv3 backbone parameters."""
+        print("Freezing DINOv3 backbone parameters")
+        for param in self.dino_model.parameters():
+            param.requires_grad = False
+        
+        # Ensure batch norm layers are in eval mode during training
+        def set_bn_eval(module):
+            if isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.LayerNorm)):
+                module.eval()
+        
+        self.dino_model.apply(set_bn_eval)
+        self.dino_model.eval()
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass through DINOv3 backbone.
+        
+        Args:
+            x: Input tensor [B, C, H, W]
+            
+        Returns:
+            Feature tensor [B, output_channels, H', W'] compatible with YOLOv12
+        """
+        B, C, H, W = x.shape
+        
+        # Adapt input channels if necessary
+        if hasattr(self, 'input_adapter'):
+            x = self.input_adapter(x)
+        
+        # Resize to expected input size for DINOv3 if necessary
+        if H != self.image_size or W != self.image_size:
+            x = nn.functional.interpolate(
+                x, 
+                size=(self.image_size, self.image_size), 
+                mode='bilinear', 
+                align_corners=False
+            )
+        
+        # Ensure DINOv3 is in eval mode if frozen
+        if self.freeze:
+            self.dino_model.eval()
+        
+        # Extract features from DINOv3
+        with torch.set_grad_enabled(not self.freeze):
+            if hasattr(self.dino_model, 'forward_features'):
+                # timm model
+                features = self.dino_model.forward_features(x)
+                if features.dim() == 3:  # [B, N, C]
+                    # Remove CLS token if present
+                    if not self.use_cls_token and features.size(1) > self.spatial_size ** 2:
+                        features = features[:, 1:, :]  # Remove CLS token
+                else:  # [B, C, H, W]
+                    features = features.flatten(2).transpose(1, 2)  # [B, H*W, C]
+            else:
+                # HuggingFace model
+                outputs = self.dino_model(x, output_hidden_states=True)
+                features = outputs.last_hidden_state  # [B, N, C]
+                
+                # Remove CLS token if present and not wanted
+                # DINOv3 typically has CLS token at position 0
+                if not self.use_cls_token and features.size(1) % (14*14) != 0:
+                    features = features[:, 1:, :]  # Remove CLS token
+        
+        # Adapt features for YOLOv12
+        features = self.feature_adapter(features)  # [B, N, output_channels]
+        
+        # Reshape to spatial format [B, C, H, W]
+        # Calculate actual spatial size from feature dimensions
+        N = features.size(1)  # Number of patches
+        C = features.size(2)  # Feature channels after adaptation
+        
+        # Handle non-perfect square by trimming to the largest perfect square
+        perfect_square_size = int(N ** 0.5)
+        perfect_square_patches = perfect_square_size ** 2
+        
+        if N != perfect_square_patches:
+            # Trim to the largest perfect square
+            features = features[:, :perfect_square_patches, :]
+            
+        features = features.transpose(1, 2).view(
+            B, self.output_channels, perfect_square_size, perfect_square_size
+        )
+        
+        # Apply spatial processing
+        features = self.spatial_conv(features)
+        features = self.spatial_bn(features)
+        features = self.spatial_act(features)
+        
+        # Resize to original spatial dimensions if needed
+        if H != self.image_size or W != self.image_size:
+            target_h = H // 2  # Assuming we want to downsample by 2x
+            target_w = W // 2
+            features = nn.functional.interpolate(
+                features,
+                size=(target_h, target_w),
+                mode='bilinear',
+                align_corners=False
+            )
+        
+        return features
+    
+    def train(self, mode: bool = True):
+        """Set training mode, keeping DINOv3 frozen if specified."""
+        super().train(mode)
+        
+        if self.freeze:
+            # Keep DINOv3 in eval mode
+            self.dino_model.eval()
+            
+            # Keep batch norm layers in eval mode
+            def set_bn_eval(module):
+                if isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.LayerNorm)):
+                    module.eval()
+            
+            self.dino_model.apply(set_bn_eval)
+        
+        return self
+    
+    def unfreeze_backbone(self):
+        """Unfreeze DINOv3 backbone for fine-tuning."""
+        print("Unfreezing DINOv3 backbone parameters")
+        self.freeze = False
+        for param in self.dino_model.parameters():
+            param.requires_grad = True
+    
+    def get_feature_maps(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """
+        Get intermediate feature maps for analysis.
+        
+        Args:
+            x: Input tensor [B, C, H, W]
+            
+        Returns:
+            Dictionary of feature maps at different stages
+        """
+        feature_maps = {}
+        
+        # Input adaptation
+        if hasattr(self, 'input_adapter'):
+            x = self.input_adapter(x)
+            feature_maps['input_adapted'] = x
+        
+        # DINOv3 features
+        features = self.forward(x)
+        feature_maps['dino_output'] = features
+        
+        return feature_maps
+
+
+class DINOv3TripleBackbone(DINOv3Backbone):
+    """
+    DINOv3 backbone specifically designed for triple input processing.
+    
+    This variant processes the 9-channel triple input more intelligently,
+    either by using three separate DINOv3 branches or a single adapted model.
+    """
+    
+    def __init__(self, use_separate_branches: bool = False, **kwargs):
+        """
+        Initialize DINOv3 for triple input.
+        
+        Args:
+            use_separate_branches: Whether to use separate DINOv3 branches for each input
+            **kwargs: Arguments passed to parent class
+        """
+        self.use_separate_branches = use_separate_branches
+        
+        if use_separate_branches:
+            # Override input channels for separate branches
+            kwargs['input_channels'] = 3
+        
+        super().__init__(**kwargs)
+        
+        if use_separate_branches:
+            self._build_triple_branches()
+    
+    def _build_triple_branches(self):
+        """Build separate DINOv3 branches for triple input."""
+        print("Building separate DINOv3 branches for triple input")
+        
+        # Create additional branches (already have one from parent)
+        self.dino_branch2 = type(self.dino_model)(self.dino_model.config) if hasattr(self.dino_model, 'config') else \
+                           timm.create_model(self.model_name, pretrained=self.pretrained, num_classes=0, global_pool="")
+        self.dino_branch3 = type(self.dino_model)(self.dino_model.config) if hasattr(self.dino_model, 'config') else \
+                           timm.create_model(self.model_name, pretrained=self.pretrained, num_classes=0, global_pool="")
+        
+        # Copy weights from the first branch
+        if self.pretrained:
+            self.dino_branch2.load_state_dict(self.dino_model.state_dict())
+            self.dino_branch3.load_state_dict(self.dino_model.state_dict())
+        
+        # Freeze additional branches if needed
+        if self.freeze:
+            for param in self.dino_branch2.parameters():
+                param.requires_grad = False
+            for param in self.dino_branch3.parameters():
+                param.requires_grad = False
+            
+            self.dino_branch2.eval()
+            self.dino_branch3.eval()
+        
+        # Feature fusion layer
+        self.feature_fusion = nn.Sequential(
+            nn.Linear(self.feature_dim * 3, self.feature_dim * 2),
+            nn.GELU(),
+            nn.Linear(self.feature_dim * 2, self.feature_dim),
+            nn.LayerNorm(self.feature_dim)
+        )
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass for triple input.
+        
+        Args:
+            x: Input tensor [B, 9, H, W] (triple input)
+            
+        Returns:
+            Feature tensor [B, output_channels, H', W']
+        """
+        if not self.use_separate_branches:
+            # Use single adapted branch
+            return super().forward(x)
+        
+        # Split triple input
+        B, C, H, W = x.shape
+        assert C == 9, f"Expected 9 channels for triple input, got {C}"
+        
+        x1 = x[:, 0:3, :, :]  # First image
+        x2 = x[:, 3:6, :, :]  # Second image
+        x3 = x[:, 6:9, :, :]  # Third image
+        
+        # Process each branch
+        features1 = self._extract_dino_features(self.dino_model, x1)
+        features2 = self._extract_dino_features(self.dino_branch2, x2)
+        features3 = self._extract_dino_features(self.dino_branch3, x3)
+        
+        # Fuse features
+        features_cat = torch.cat([features1, features2, features3], dim=-1)  # [B, N, 3*C]
+        features_fused = self.feature_fusion(features_cat)  # [B, N, C]
+        
+        # Adapt and reshape features
+        features = self.feature_adapter(features_fused)
+        # Calculate actual spatial size from feature dimensions
+        N = features.size(1)  # Number of patches
+        
+        # Handle non-perfect square by trimming to the largest perfect square
+        perfect_square_size = int(N ** 0.5)
+        perfect_square_patches = perfect_square_size ** 2
+        
+        if N != perfect_square_patches:
+            # Trim to the largest perfect square
+            features = features[:, :perfect_square_patches, :]
+            
+        features = features.transpose(1, 2).view(
+            B, self.output_channels, perfect_square_size, perfect_square_size
+        )
+        
+        # Apply spatial processing
+        features = self.spatial_conv(features)
+        features = self.spatial_bn(features)
+        features = self.spatial_act(features)
+        
+        return features
+    
+    def _extract_dino_features(self, model: nn.Module, x: torch.Tensor) -> torch.Tensor:
+        """Extract features from a DINOv3 branch."""
+        # Resize input if necessary
+        if x.size(-1) != self.image_size or x.size(-2) != self.image_size:
+            x = nn.functional.interpolate(
+                x, 
+                size=(self.image_size, self.image_size), 
+                mode='bilinear', 
+                align_corners=False
+            )
+        
+        # Extract features
+        with torch.set_grad_enabled(not self.freeze):
+            if hasattr(model, 'forward_features'):
+                # timm model
+                features = model.forward_features(x)
+                if features.dim() == 3:  # [B, N, C]
+                    if not self.use_cls_token and features.size(1) % (14*14) != 0:
+                        features = features[:, 1:, :]  # Remove CLS token
+                else:  # [B, C, H, W]
+                    features = features.flatten(2).transpose(1, 2)  # [B, H*W, C]
+            else:
+                # HuggingFace model
+                outputs = model(x, output_hidden_states=True)
+                features = outputs.last_hidden_state  # [B, N, C]
+                
+                if not self.use_cls_token and features.size(1) % (14*14) != 0:
+                    features = features[:, 1:, :]  # Remove CLS token
+        
+        return features
+
+
+def create_dinov3_backbone(
+    model_size: str = "small",
+    input_channels: int = 3,
+    output_channels: int = 64,
+    freeze: bool = True,
+    use_triple_branches: bool = False,
+    **kwargs
+) -> DINOv3Backbone:
+    """
+    Factory function to create DINOv3 backbone.
+    
+    Args:
+        model_size: Size of DINOv3 model (small, base, large)
+        input_channels: Number of input channels
+        output_channels: Number of output channels
+        freeze: Whether to freeze backbone
+        use_triple_branches: Whether to use separate branches for triple input
+        **kwargs: Additional arguments
+        
+    Returns:
+        DINOv3Backbone instance
+    """
+    # Model mapping for correct HuggingFace repository names
+    model_configs = {
+        "small": "facebook/dinov3-vits16-pretrain-lvd1689m",
+        "base": "facebook/dinov3-vitb16-pretrain-lvd1689m", 
+        "large": "facebook/dinov3-vitl16-pretrain-lvd1689m",
+        "giant": "facebook/dinov3-vit7b16-pretrain-lvd1689m",
+    }
+    
+    model_name = model_configs.get(model_size, model_configs["small"])
+    
+    if input_channels == 9 and use_triple_branches:
+        return DINOv3TripleBackbone(
+            model_name=model_name,
+            input_channels=input_channels,
+            output_channels=output_channels,
+            freeze=freeze,
+            use_separate_branches=True,
+            **kwargs
+        )
+    else:
+        backbone_class = DINOv3TripleBackbone if input_channels == 9 else DINOv3Backbone
+        return backbone_class(
+            model_name=model_name,
+            input_channels=input_channels,
+            output_channels=output_channels,
+            freeze=freeze,
+            **kwargs
+        )

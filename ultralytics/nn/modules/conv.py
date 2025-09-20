@@ -352,9 +352,13 @@ class Index(nn.Module):
 
 
 class TripleInputConv(nn.Module):
-    """Triple input convolution layer that processes 9-channel input as three separate 3-channel images."""
+    """Triple input convolution layer that processes 9-channel input as three separate 3-channel images.
+    
+    Supports loading pretrained weights from standard YOLOv12 models by replicating the first layer weights
+    across the three branches and fine-tuning from there.
+    """
 
-    def __init__(self, c1, c2, k=3, s=1, p=None, g=1, d=1, act=True):
+    def __init__(self, c1, c2, k=3, s=1, p=None, g=1, d=1, act=True, pretrained_weights=None):
         """
         Initialize TripleInputConv layer.
         
@@ -367,10 +371,21 @@ class TripleInputConv(nn.Module):
             g: Groups (will be set to 1 for the branch convolutions)
             d: Dilation
             act: Activation function
+            pretrained_weights: Optional pretrained weights from standard YOLOv12 first layer
         """
         super().__init__()
         # Ensure we have 9 input channels for triple input
         assert c1 == 9, f"TripleInputConv expects 9 input channels, got {c1}"
+        
+        # Store initialization parameters
+        self.c1 = c1
+        self.c2 = c2
+        self.k = k
+        self.s = s
+        self.p = p
+        self.g = g
+        self.d = d
+        self.act_type = act
         
         # Three separate convolution branches for each 3-channel input
         # Use g=1 for branch convolutions to avoid group compatibility issues
@@ -380,6 +395,10 @@ class TripleInputConv(nn.Module):
         
         # Optional fusion layer to combine features from three branches
         self.fusion = Conv(c2 * 3, c2, 1, 1, 0, 1, 1, act)
+        
+        # Initialize weights from pretrained model if provided
+        if pretrained_weights is not None:
+            self.load_pretrained_weights(pretrained_weights)
 
     def forward(self, x):
         """
@@ -406,3 +425,96 @@ class TripleInputConv(nn.Module):
         fused = self.fusion(combined)
         
         return fused
+    
+    def load_pretrained_weights(self, pretrained_state_dict):
+        """
+        Load pretrained weights from a standard YOLOv12 model.
+        
+        Args:
+            pretrained_state_dict: State dict from pretrained YOLOv12 model
+        """
+        try:
+            # Extract first layer weights from pretrained model
+            # Look for the first conv layer (typically 'model.0.conv.weight')
+            first_layer_key = None
+            for key in pretrained_state_dict.keys():
+                if 'model.0.' in key and 'conv.weight' in key:
+                    first_layer_key = key
+                    break
+            
+            if first_layer_key is None:
+                print("Warning: Could not find first layer weights in pretrained model")
+                return
+            
+            pretrained_weight = pretrained_state_dict[first_layer_key]
+            pretrained_bias_key = first_layer_key.replace('weight', 'bias')
+            pretrained_bias = pretrained_state_dict.get(pretrained_bias_key)
+            
+            # Load weights into all three branches
+            self._load_branch_weights(self.conv1, pretrained_weight, pretrained_bias, pretrained_state_dict, first_layer_key)
+            self._load_branch_weights(self.conv2, pretrained_weight, pretrained_bias, pretrained_state_dict, first_layer_key)
+            self._load_branch_weights(self.conv3, pretrained_weight, pretrained_bias, pretrained_state_dict, first_layer_key)
+            
+            print(f"✓ Loaded pretrained weights from {first_layer_key} into TripleInputConv branches")
+            
+        except Exception as e:
+            print(f"Warning: Failed to load pretrained weights: {e}")
+    
+    def _load_branch_weights(self, branch_conv, pretrained_weight, pretrained_bias, full_state_dict, base_key):
+        """Load pretrained weights into a single branch."""
+        try:
+            # Load conv weights
+            if pretrained_weight.shape[1] == 3:  # Standard 3-channel input
+                with torch.no_grad():
+                    branch_conv.conv.weight.copy_(pretrained_weight)
+                    if pretrained_bias is not None:
+                        branch_conv.conv.bias.copy_(pretrained_bias)
+            
+            # Load BatchNorm weights if available
+            bn_weight_key = base_key.replace('conv.weight', 'bn.weight')
+            bn_bias_key = base_key.replace('conv.weight', 'bn.bias')
+            bn_mean_key = base_key.replace('conv.weight', 'bn.running_mean')
+            bn_var_key = base_key.replace('conv.weight', 'bn.running_var')
+            
+            if bn_weight_key in full_state_dict:
+                with torch.no_grad():
+                    branch_conv.bn.weight.copy_(full_state_dict[bn_weight_key])
+                    branch_conv.bn.bias.copy_(full_state_dict[bn_bias_key])
+                    branch_conv.bn.running_mean.copy_(full_state_dict[bn_mean_key])
+                    branch_conv.bn.running_var.copy_(full_state_dict[bn_var_key])
+                    
+        except Exception as e:
+            print(f"Warning: Failed to load weights for branch: {e}")
+    
+    @classmethod
+    def from_pretrained(cls, c1, c2, pretrained_model_path, **kwargs):
+        """
+        Create TripleInputConv layer with pretrained weights.
+        
+        Args:
+            c1: Input channels (should be 9)
+            c2: Output channels
+            pretrained_model_path: Path to pretrained YOLOv12 model (.pt file)
+            **kwargs: Additional arguments for TripleInputConv
+            
+        Returns:
+            TripleInputConv layer with loaded pretrained weights
+        """
+        import torch
+        
+        # Load pretrained model
+        try:
+            checkpoint = torch.load(pretrained_model_path, map_location='cpu')
+            if 'model' in checkpoint:
+                state_dict = checkpoint['model'].state_dict() if hasattr(checkpoint['model'], 'state_dict') else checkpoint['model']
+            else:
+                state_dict = checkpoint
+            
+            # Create layer with pretrained weights
+            layer = cls(c1, c2, pretrained_weights=state_dict, **kwargs)
+            return layer
+            
+        except Exception as e:
+            print(f"Warning: Failed to load pretrained model from {pretrained_model_path}: {e}")
+            # Return layer without pretrained weights
+            return cls(c1, c2, **kwargs)

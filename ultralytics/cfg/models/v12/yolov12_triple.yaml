@@ -1,6 +1,6 @@
 # YOLOv12 🚀, AGPL-3.0 license
 # YOLOv12 Triple Input object detection model with P3-P5 outputs. For Usage examples see https://docs.ultralytics.com/tasks/detect
-# CFG file for YOLOv12-triple with 9-channel input support
+# CFG file for YOLOv12-triple with 9-channel input support and pretrained weight compatibility
 
 # Parameters
 nc: 80 # number of classes

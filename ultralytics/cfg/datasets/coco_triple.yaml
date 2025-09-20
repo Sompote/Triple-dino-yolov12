@@ -4,9 +4,9 @@
 
 # Dataset info
 path: ../datasets/coco_triple # dataset root dir
-train: images/train2017 # train images (relative to 'path')
-val: images/val2017 # val images (relative to 'path')
-test: # test images (optional)
+train: images/train # train images (relative to 'path')
+val: images/val # val images (relative to 'path') - used during training for validation
+test: images/test # test images (used for final model evaluation after training)
 
 # Triple input configuration
 triple_input: true # Enable triple input mode (9-channel)
@@ -99,16 +99,20 @@ download: |
   # For triple input, your dataset structure should be:
   # dataset_root/
   #   images/
-  #     train2017/
+  #     train/
   #       image1.jpg (primary images)
   #       detail1/
   #         image1.jpg (detail images 1)
   #       detail2/
   #         image1.jpg (detail images 2)
-  #     val2017/
-  #       (same structure)
+  #     val/
+  #       (same structure as train - used during training for validation)
+  #     test/
+  #       (same structure as train - used for final evaluation after training)
   #   labels/
-  #     train2017/
+  #     train/
   #       image1.txt
-  #     val2017/
+  #     val/
+  #       image1.txt
+  #     test/
   #       image1.txt
