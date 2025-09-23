@@ -381,11 +381,15 @@ class DINOv3TripleBackbone(DINOv3Backbone):
     either by using three separate DINOv3 branches or a single adapted model.
     """
     
-    def __init__(self, use_separate_branches: bool = False, **kwargs):
+    def __init__(self, model_name: str = "facebook/dinov3-small", input_channels: int = 9, output_channels: int = 64, freeze: bool = True, use_separate_branches: bool = False, **kwargs):
         """
         Initialize DINOv3 for triple input.
         
         Args:
+            model_name: HuggingFace model name or local path
+            input_channels: Number of input channels (9 for triple input)
+            output_channels: Number of output channels for YOLOv12 compatibility
+            freeze: Whether to freeze DINOv3 parameters
             use_separate_branches: Whether to use separate DINOv3 branches for each input
             **kwargs: Arguments passed to parent class
         """
@@ -393,9 +397,15 @@ class DINOv3TripleBackbone(DINOv3Backbone):
         
         if use_separate_branches:
             # Override input channels for separate branches
-            kwargs['input_channels'] = 3
+            input_channels = 3
         
-        super().__init__(**kwargs)
+        super().__init__(
+            model_name=model_name,
+            input_channels=input_channels,
+            output_channels=output_channels,
+            freeze=freeze,
+            **kwargs
+        )
         
         if use_separate_branches:
             self._build_triple_branches()

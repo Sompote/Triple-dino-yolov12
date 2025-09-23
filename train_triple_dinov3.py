@@ -126,10 +126,12 @@ def train_triple_dinov3(
     print(f"\n⚙️ Step 5: Configuring training parameters...")
     
     # Training configuration optimized for DINOv3
+    # Force minimum batch size of 2 to avoid BatchNorm issues with batch=1
+    effective_batch_size = max(batch_size, 2)
     train_args = {
         'data': data_config,
         'epochs': epochs,
-        'batch': batch_size,
+        'batch': effective_batch_size,
         'imgsz': imgsz,
         'patience': patience,
         'save': True,
@@ -153,14 +155,24 @@ def train_triple_dinov3(
         # Optimizer (AdamW often works better with transformers)
         'optimizer': 'AdamW',
         
-        # Mixed precision (helpful for memory with DINOv3)
-        'amp': True,
+        # Mixed precision (helpful for memory with DINOv3) - disabled to avoid BatchNorm issues with small batch
+        'amp': False,
+        
+        # Disable problematic augmentations for small dataset and 9-channel input
+        'mixup': 0.0,  # Disable MixUp augmentation
+        'copy_paste': 0.0,  # Disable CopyPaste augmentation
+        'mosaic': 0.0,  # Disable Mosaic augmentation (can cause issues with small datasets)
+        'hsv_h': 0.0,  # Disable HSV hue augmentation (incompatible with 9-channel input)
+        'hsv_s': 0.0,  # Disable HSV saturation augmentation (incompatible with 9-channel input)  
+        'hsv_v': 0.0,  # Disable HSV value augmentation (incompatible with 9-channel input)
         
         # Additional arguments
         **kwargs
     }
     
     # Display key training parameters
+    if effective_batch_size != batch_size:
+        print(f"  Batch size adjusted: {batch_size} → {effective_batch_size} (minimum for BatchNorm)")
     print(f"  Learning rate: {train_args['lr0']}")
     print(f"  Optimizer: {train_args['optimizer']}")
     print(f"  Mixed precision: {train_args['amp']}")
@@ -169,11 +181,11 @@ def train_triple_dinov3(
     # Step 6: Memory and performance warnings
     print(f"\n⚠️ Step 6: Performance considerations...")
     print("DINOv3 backbone requires significant memory and compute:")
-    print(f"  - Recommended batch size: 4-8 (current: {batch_size})")
+    print(f"  - Recommended batch size: 4-8 (effective: {effective_batch_size})")
     print(f"  - Recommended image size: 224-384 (current: {imgsz})")
     print(f"  - DINOv3 frozen: {freeze_dinov3} (recommended for initial training)")
     
-    if batch_size > 8:
+    if effective_batch_size > 8:
         print("⚠️ Large batch size may cause OOM with DINOv3")
     
     if imgsz > 384:

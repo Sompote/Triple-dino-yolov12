@@ -63,6 +63,9 @@ from ultralytics.nn.modules import (
     Segment,
     TorchVision,
     TripleInputConv,
+    DINOv3Backbone,
+    DINOv3TripleBackbone,
+    create_dinov3_backbone,
     WorldDetect,
     v10Detect,
     A2C2f,
@@ -1068,6 +1071,11 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c1 = 9  # Force 9 input channels for triple input
             c2 = args[0]
             args = [c1, c2, *args[1:]]
+        elif m in {DINOv3Backbone, DINOv3TripleBackbone}:
+            # Special handling for DINOv3 backbones - output channels specified in args[2]
+            c1 = ch[f] if f != -1 else args[1]  # input channels from previous layer or specified
+            c2 = args[2]  # output channels specified in config
+            args = [args[0], c1, c2, *args[3:]]  # [model_name, input_channels, output_channels, freeze, ...]
         elif m is CBFuse:
             c2 = ch[f[-1]]
         else:
