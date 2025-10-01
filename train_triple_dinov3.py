@@ -6,7 +6,19 @@ This script trains YOLOv12 Triple Input models with DINOv3 feature extraction
 for enhanced performance in civil engineering applications.
 
 Usage:
-    python train_triple_dinov3.py --data test_triple_dataset.yaml
+    # Standard DINOv3 integration (before backbone)
+    python train_triple_dinov3.py --data test_triple_dataset.yaml --integrate initial
+    
+    # No DINOv3 integration (triple input only)
+    python train_triple_dinov3.py --data test_triple_dataset.yaml --integrate nodino
+    
+    # DINOv3 integration after P3 stage
+    python train_triple_dinov3.py --data test_triple_dataset.yaml --integrate p3
+    
+    # Dual DINOv3 integration (before backbone + after P3)
+    python train_triple_dinov3.py --data test_triple_dataset.yaml --integrate p0p3
+    
+    # With different DINOv3 sizes
     python train_triple_dinov3.py --data test_triple_dataset.yaml --dinov3-size base --freeze-dinov3
     python train_triple_dinov3.py --data test_triple_dataset.yaml --pretrained yolov12n.pt --dinov3-size small
 """
@@ -28,7 +40,8 @@ def train_triple_dinov3(
     imgsz: int = 224,     # DINOv3 default size
     patience: int = 50,
     name: str = "yolov12_triple_dinov3",
-    device: str = "0",
+    device: str = "cpu",
+    integrate: str = "initial",  # New parameter: "initial", "nodino", "p3"
     **kwargs
 ):
     """
@@ -46,6 +59,11 @@ def train_triple_dinov3(
         patience: Early stopping patience
         name: Experiment name
         device: Device to use
+        integrate: DINOv3 integration strategy
+            - "initial": Add DINOv3 before backbone (default)
+            - "nodino": Don't apply DINOv3 adaptor at all
+            - "p3": Add DINOv3 after P3 stage instead
+            - "p0p3": Dual DINOv3 integration (before backbone + after P3)
         **kwargs: Additional training arguments
         
     Returns:
@@ -56,6 +74,7 @@ def train_triple_dinov3(
     print("=" * 60)
     print(f"Data Config: {data_config}")
     print(f"DINOv3 Size: {dinov3_size}")
+    print(f"DINOv3 Integration: {integrate}")
     print(f"Freeze DINOv3: {freeze_dinov3}")
     print(f"Triple Branches: {use_triple_branches}")
     print(f"Pretrained: {pretrained_path or 'None'}")
@@ -65,36 +84,76 @@ def train_triple_dinov3(
     print(f"Device: {device}")
     print("-" * 60)
     
-    # Step 1: Setup DINOv3 requirements
-    print("\n🔧 Step 1: Setting up DINOv3 requirements...")
-    try:
-        import transformers
-        import timm
-        print("✓ Required packages available")
-    except ImportError as e:
-        print(f"❌ Missing required packages: {e}")
-        print("Install with: pip install transformers timm huggingface_hub")
-        return None
+    # Step 1: Setup requirements based on integration strategy
+    print(f"\n🔧 Step 1: Setting up requirements for integration strategy: {integrate}...")
+    
+    if integrate == "nodino":
+        print("No DINOv3 integration - using standard triple input model")
+        # Skip DINOv3 setup for nodino mode
+    else:
+        try:
+            import transformers
+            import timm
+            print("✓ DINOv3 packages available")
+        except ImportError as e:
+            print(f"❌ Missing required packages: {e}")
+            print("Install with: pip install transformers timm huggingface_hub")
+            return None
     
     # Step 2: Download DINOv3 model if needed
-    print(f"\n📥 Step 2: Preparing DINOv3 {dinov3_size} model...")
-    try:
-        from download_dinov3 import DINOv3Downloader
-        downloader = DINOv3Downloader()
-        success, _ = downloader.download_model(dinov3_size, method="auto")
-        if success:
-            print(f"✓ DINOv3 {dinov3_size} model ready")
-        else:
-            print(f"⚠️ Failed to download DINOv3 {dinov3_size}, proceeding anyway...")
-    except Exception as e:
-        print(f"⚠️ DINOv3 download warning: {e}")
-        print("Proceeding with training, model will be downloaded automatically if needed")
+    if integrate != "nodino":
+        print(f"\n📥 Step 2: Preparing DINOv3 {dinov3_size} model...")
+        print("🔐 Setting up HuggingFace authentication...")
+        
+        # Check HuggingFace authentication
+        try:
+            from ultralytics.nn.modules.dinov3 import setup_huggingface_auth
+            auth_success, auth_source = setup_huggingface_auth()
+            
+            if not auth_success:
+                print("⚠️ HuggingFace authentication not configured.")
+                print("DINOv3 models may not be accessible without authentication.")
+                print("To set up authentication:")
+                print("  1. Get token from: https://huggingface.co/settings/tokens")
+                print("  2. Set environment variable: export HUGGINGFACE_HUB_TOKEN='your_token'")
+                print("  3. Or run: huggingface-cli login")
+        except Exception as e:
+            print(f"⚠️ Authentication setup warning: {e}")
+        
+        try:
+            from download_dinov3 import DINOv3Downloader
+            downloader = DINOv3Downloader()
+            success, _ = downloader.download_model(dinov3_size, method="auto")
+            if success:
+                print(f"✓ DINOv3 {dinov3_size} model ready")
+            else:
+                print(f"⚠️ Failed to download DINOv3 {dinov3_size}, proceeding anyway...")
+        except Exception as e:
+            print(f"⚠️ DINOv3 download warning: {e}")
+            print("Proceeding with training, model will be downloaded automatically if needed")
+    else:
+        print("\n📥 Step 2: Skipping DINOv3 download (nodino mode)")
     
-    # Step 3: Create model configuration
-    print(f"\n🏗️ Step 3: Creating model configuration...")
+    # Step 3: Create model configuration based on integration strategy
+    print(f"\n🏗️ Step 3: Creating model configuration for integration: {integrate}...")
     
-    # Use DINOv3 model configuration
-    model_config = "ultralytics/cfg/models/v12/yolov12_triple_dinov3.yaml"
+    # Select appropriate model configuration
+    if integrate == "nodino":
+        model_config = "ultralytics/cfg/models/v12/yolov12_triple.yaml"
+        print("Using standard triple input model (no DINOv3)")
+    elif integrate == "initial":
+        model_config = "ultralytics/cfg/models/v12/yolov12_triple_dinov3.yaml"
+        print("Using DINOv3 integration before backbone (initial)")
+    elif integrate == "p3":
+        model_config = "ultralytics/cfg/models/v12/yolov12_triple_dinov3_p3.yaml"
+        print("Using DINOv3 integration after P3 stage")
+    elif integrate == "p0p3":
+        model_config = "ultralytics/cfg/models/v12/yolov12_triple_dinov3_p0p3.yaml"
+        print("Using dual DINOv3 integration (before backbone + after P3)")
+    else:
+        print(f"❌ Unknown integration strategy: {integrate}")
+        print("Available options: initial, nodino, p3, p0p3")
+        return None
     
     if not Path(model_config).exists():
         print(f"❌ Model config not found: {model_config}")
@@ -113,7 +172,78 @@ def train_triple_dinov3(
             )
         else:
             print("Training from scratch with DINOv3 features")
-            model = YOLO(model_config)
+            # For nodino integration, use the YAML as-is
+            if integrate == "nodino":
+                # Set model scale to prevent scale warning and ensure proper architecture
+                import yaml
+                
+                # Load the base config  
+                with open(model_config, 'r') as f:
+                    config = yaml.safe_load(f)
+                
+                # Ensure input channels are set correctly for triple input
+                config['ch'] = 9  # Set input channels to 9 for triple input
+                
+                # Create temporary config file with correct settings
+                temp_config_path = f"temp_yolov12_triple_nodino.yaml"
+                with open(temp_config_path, 'w') as f:
+                    yaml.dump(config, f, default_flow_style=False)
+                
+                model = YOLO(temp_config_path)
+                
+                # Clean up temporary file
+                Path(temp_config_path).unlink(missing_ok=True)
+            else:
+                # For DINOv3 integration, modify the model configuration dynamically
+                import yaml
+                
+                # Load the base config
+                with open(model_config, 'r') as f:
+                    config = yaml.safe_load(f)
+                
+                # Update DINOv3 model size and configuration
+                if integrate in ["initial", "p3", "p0p3"]:
+                    # Map model sizes to HuggingFace model names
+                    model_name_map = {
+                        "small": "facebook/dinov3-vits16-pretrain-lvd1689m",
+                        "small_plus": "facebook/dinov3-vits16plus-pretrain-lvd1689m", 
+                        "base": "facebook/dinov3-vitb16-pretrain-lvd1689m",
+                        "large": "facebook/dinov3-vitl16-pretrain-lvd1689m",
+                        "huge": "facebook/dinov3-vith16plus-pretrain-lvd1689m",
+                        "giant": "facebook/dinov3-vit7b16-pretrain-lvd1689m"
+                    }
+                    
+                    dino_model_name = model_name_map.get(dinov3_size, model_name_map["small"])
+                    
+                    if integrate == "initial":
+                        # Update the backbone DINOv3 configuration
+                        config['backbone'][0][-1][0] = dino_model_name  # Update model name
+                        config['backbone'][0][-1][3] = freeze_dinov3    # Update freeze setting
+                    elif integrate == "p3":
+                        # Update the P3 DINOv3 configuration (after P3 stage)
+                        config['backbone'][5][-1][0] = dino_model_name  # Update model name
+                        config['backbone'][5][-1][3] = freeze_dinov3    # Update freeze setting
+                    elif integrate == "p0p3":
+                        # Update both P0 and P3 DINOv3 configurations (dual DINOv3)
+                        config['backbone'][0][-1][0] = dino_model_name  # P0 DINOv3 model name
+                        config['backbone'][0][-1][3] = freeze_dinov3    # P0 DINOv3 freeze setting
+                        config['backbone'][5][-1][0] = dino_model_name  # P3 DINOv3 model name
+                        config['backbone'][5][-1][3] = freeze_dinov3    # P3 DINOv3 freeze setting
+                    
+                    print(f"Using DINOv3 model: {dino_model_name}")
+                    print(f"DINOv3 frozen: {freeze_dinov3}")
+                    if integrate == "p0p3":
+                        print("Dual DINOv3 configuration: P0 (9→64 channels) + P3 (512→256 channels)")
+                
+                # Create temporary config file
+                temp_config_path = f"temp_yolov12_triple_dinov3_{dinov3_size}.yaml"
+                with open(temp_config_path, 'w') as f:
+                    yaml.dump(config, f, default_flow_style=False)
+                
+                model = YOLO(temp_config_path)
+                
+                # Clean up temporary file
+                Path(temp_config_path).unlink(missing_ok=True)
         
         print("✓ Model initialized successfully")
         
@@ -165,6 +295,18 @@ def train_triple_dinov3(
         'hsv_h': 0.0,  # Disable HSV hue augmentation (incompatible with 9-channel input)
         'hsv_s': 0.0,  # Disable HSV saturation augmentation (incompatible with 9-channel input)  
         'hsv_v': 0.0,  # Disable HSV value augmentation (incompatible with 9-channel input)
+        'auto_augment': None,  # Disable auto augmentation (ToGray incompatible with 9-channel input)
+        'erasing': 0.0,  # Disable random erasing
+        'plots': False,  # Disable plots (visualization incompatible with 9-channel input)
+        
+        # Additional augmentation disabling for 9-channel compatibility
+        'degrees': 0.0,  # Disable rotation
+        'translate': 0.0,  # Disable translation
+        'scale': 0.0,  # Disable scaling
+        'shear': 0.0,  # Disable shearing
+        'perspective': 0.0,  # Disable perspective
+        'flipud': 0.0,  # Disable vertical flip
+        'fliplr': 0.0,  # Disable horizontal flip
         
         # Additional arguments
         **kwargs
@@ -331,12 +473,19 @@ def main():
                        help='Early stopping patience (default: 50)')
     parser.add_argument('--name', type=str, default='yolov12_triple_dinov3',
                        help='Experiment name (default: yolov12_triple_dinov3)')
-    parser.add_argument('--device', type=str, default='0',
-                       help='Device to use (default: 0)')
+    parser.add_argument('--device', type=str, default='cpu',
+                       help='Device to use (default: cpu, use "0" for GPU)')
     parser.add_argument('--compare', action='store_true',
                        help='Compare with and without DINOv3 backbone')
     parser.add_argument('--download-only', action='store_true',
                        help='Only download DINOv3 models without training')
+    parser.add_argument('--integrate', type=str, choices=['initial', 'nodino', 'p3', 'p0p3'], 
+                       default='initial', 
+                       help='DINOv3 integration strategy: '
+                            'initial (before backbone), '
+                            'nodino (no DINOv3), '
+                            'p3 (after P3 stage), '
+                            'p0p3 (dual DINOv3: before backbone + after P3)')
     
     args = parser.parse_args()
     
@@ -377,7 +526,8 @@ def main():
             imgsz=args.imgsz,
             patience=args.patience,
             name=args.name,
-            device=args.device
+            device=args.device,
+            integrate=args.integrate
         )
 
 if __name__ == "__main__":

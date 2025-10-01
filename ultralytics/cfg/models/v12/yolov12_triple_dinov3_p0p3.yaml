@@ -1,0 +1,64 @@
+# YOLOv12 🚀, AGPL-3.0 license
+# YOLOv12 Triple Input with Dual DINOv3 integration (P0 + P3)
+# CFG file for YOLOv12-triple with dual DINOv3 feature extraction at P0 and P3 stages
+
+# Parameters
+nc: 80 # number of classes  
+ch: 9  # input channels for triple input
+scales: # model compound scaling constants, i.e. 'model=yolov12n_triple_dinov3_p0p3.yaml' will call yolov12_triple_dinov3_p0p3.yaml with scale 'n'
+  # [depth, width, max_channels]
+  n: [0.50, 0.25, 1024] # summary: ~XXX layers, ~X,XXX,XXX parameters, ~X,XXX,XXX gradients, ~XX.X GFLOPs
+  s: [0.50, 0.50, 1024] # summary: ~XXX layers, ~X,XXX,XXX parameters, ~X,XXX,XXX gradients, ~XX.X GFLOPs
+  m: [0.50, 1.00, 512]  # summary: ~XXX layers, ~XX,XXX,XXX parameters, ~XX,XXX,XXX gradients, ~XXX.X GFLOPs
+  l: [1.00, 1.00, 512]  # summary: ~XXX layers, ~XX,XXX,XXX parameters, ~XX,XXX,XXX gradients, ~XXX.X GFLOPs
+  x: [1.00, 1.50, 512]  # summary: ~XXX layers, ~XX,XXX,XXX parameters, ~XX,XXX,XXX gradients, ~XXX.X GFLOPs
+
+# Dual DINOv3 configuration
+dinov3:
+  model_size: "small"        # DINOv3 model size: small, base, large, giant
+  freeze: true               # Freeze DINOv3 backbone during training
+  use_triple_branches: false # Use separate DINOv3 branches for each input
+  p0_output_channels: 64     # Output channels from P0 DINOv3 backbone (before backbone)
+  p3_output_channels: 256    # Output channels from P3 DINOv3 backbone (after P3)
+  image_size: 224           # Input image size for DINOv3
+  integration_points: ["p0", "p3"]  # Dual integration: before backbone + after P3
+
+# YOLO12-triple backbone with Dual DINOv3 integration (P0 + P3)
+backbone:
+  # [from, repeats, module, args]
+  
+  # P0 DINOv3 Feature Extraction (9-channel input → enhanced features)
+  - [-1, 1, DINOv3Backbone, ["facebook/dinov3-vits16-pretrain-lvd1689m", 9, 64, true]]  # 0-P0 DINOv3 [model_name, input_channels, output_channels, freeze]
+  - [-1, 1, Conv,  [128, 3, 2]]             # 1-P2/4
+  - [-1, 2, C3k2,  [256, False, 0.25]]      # 2
+  - [-1, 1, Conv,  [256, 3, 2]]             # 3-P3/8
+  - [-1, 2, C3k2,  [512, False, 0.25]]      # 4-P3 stage
+  
+  # P3 DINOv3 Feature Enhancement (after P3 processing)
+  - [-1, 1, DINOv3Backbone, ["facebook/dinov3-vits16-pretrain-lvd1689m", 512, 256, true]]  # 5-P3 DINOv3 [model_name, input_channels, output_channels, freeze]
+  
+  # Continue with dual-enhanced features
+  - [-1, 1, Conv,  [512, 3, 2]]             # 6-P4/16
+  - [-1, 4, A2C2f, [512, True, 4]]          # 7
+  - [-1, 1, Conv,  [1024, 3, 2]]            # 8-P5/32
+  - [-1, 4, A2C2f, [1024, True, 1]]         # 9
+
+# YOLO12-triple head (adjusted for dual DINOv3 integration)
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 10
+  - [[-1, 7], 1, Concat, [1]] # cat backbone P4        # 11
+  - [-1, 2, A2C2f, [512, False, -1]]                   # 12
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 13
+  - [[-1, 5], 1, Concat, [1]] # cat backbone P3 (dual DINOv3 enhanced)  # 14
+  - [-1, 2, A2C2f, [256, False, -1]]                   # 15
+
+  - [-1, 1, Conv, [256, 3, 2]]                         # 16
+  - [[-1, 12], 1, Concat, [1]] # cat head P4           # 17
+  - [-1, 2, A2C2f, [512, False, -1]]                   # 18
+
+  - [-1, 1, Conv, [512, 3, 2]]                         # 19
+  - [[-1, 9], 1, Concat, [1]] # cat head P5            # 20
+  - [-1, 2, C3k2, [1024, True]]                        # 21 (P5/32-large)
+
+  - [[15, 18, 21], 1, Detect, [nc]]                    # Detect(P3, P4, P5)
