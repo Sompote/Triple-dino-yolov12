@@ -109,13 +109,55 @@ def train_triple_dinov3_fixed(
         **kwargs
     )
 
+def print_dinov3_info():
+    """Print detailed DINOv3 model information."""
+    print("\n📊 DINOv3 Model Size Comparison:")
+    print("=" * 80)
+    print(f"{'Model':<12} {'Params':<8} {'Dimensions':<11} {'Memory':<10} {'Speed':<8} {'Use Case'}")
+    print("-" * 80)
+    print(f"{'small':<12} {'21M':<8} {'384':<11} {'~2GB':<10} {'Fast':<8} {'Quick experiments, prototyping'}")
+    print(f"{'base':<12} {'86M':<8} {'768':<11} {'~4GB':<10} {'Medium':<8} {'Recommended for most tasks'}")
+    print(f"{'large':<12} {'304M':<8} {'1024':<11} {'~8GB':<10} {'Slow':<8} {'High accuracy requirements'}")
+    print(f"{'giant':<12} {'1.1B':<8} {'1536':<11} {'~16GB':<10} {'Slowest':<8} {'Research, maximum quality'}")
+    print(f"{'sat_large':<12} {'304M':<8} {'1024':<11} {'~8GB':<10} {'Slow':<8} {'Satellite/aerial imagery'}")
+    print(f"{'sat_giant':<12} {'1.1B':<8} {'1536':<11} {'~16GB':<10} {'Slowest':<8} {'Max satellite performance'}")
+    print("=" * 80)
+    print("\n💡 Recommendations:")
+    print("  • Start with 'base' for most applications")
+    print("  • Use 'small' for quick testing or limited GPU memory")
+    print("  • Use 'large' for production where accuracy is critical")
+    print("  • Use 'sat_*' variants specifically for satellite/aerial images")
+    print("  • Consider 'giant' only if you have ample compute resources\n")
+
 def main():
     """Main function with same argument parsing as original script."""
-    parser = argparse.ArgumentParser(description='Train YOLOv12 Triple Input with DINOv3 backbone (FIXED)')
+    parser = argparse.ArgumentParser(
+        description='Train YOLOv12 Triple Input with DINOv3 backbone (FIXED for Triple Input Datasets)',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="Examples:\n"
+               "  # Quick training with small model:\n"
+               "  python train_triple_dinov3_fixed.py --data dataset.yaml --dinov3-size small --variant s\n\n"
+               "  # Production training with large model:\n"
+               "  python train_triple_dinov3_fixed.py --data dataset.yaml --dinov3-size large --variant x --epochs 300\n\n"
+               "  # Satellite imagery with specialized model:\n"
+               "  python train_triple_dinov3_fixed.py --data dataset.yaml --dinov3-size sat_large --integrate p0p3\n\n"
+               "  # CPU training for testing:\n"
+               "  python train_triple_dinov3_fixed.py --data dataset.yaml --dinov3-size small --device cpu --batch 2\n\n"
+               "For DINOv3 model details, run: python -c \"from train_triple_dinov3_fixed import print_dinov3_info; print_dinov3_info()\""
+    )
     parser.add_argument('--data', type=str, required=True,
                        help='Path to dataset configuration (.yaml file)')
-    parser.add_argument('--dinov3-size', type=str, choices=['small', 'base', 'large', 'giant', 'sat_large', 'sat_giant'], 
-                       default='small', help='DINOv3 model size (default: small)')
+    parser.add_argument('--dinov3-size', type=str, 
+                       choices=['small', 'base', 'large', 'giant', 'sat_large', 'sat_giant'], 
+                       default='small',
+                       help='DINOv3 model size - impacts accuracy vs speed/memory:\n'
+                            'small: 21M params, fastest, lowest memory (384 dim) - good for quick experiments\n'
+                            'base: 86M params, balanced performance (768 dim) - recommended for most use cases\n'
+                            'large: 304M params, high accuracy (1024 dim) - best for quality results\n'
+                            'giant: 1.1B params, maximum accuracy (1536 dim) - research/high-end only\n'
+                            'sat_large: 304M params, satellite-optimized (1024 dim) - for aerial/satellite imagery\n'
+                            'sat_giant: 1.1B params, satellite-optimized (1536 dim) - maximum satellite performance\n'
+                            '(default: small)')
     parser.add_argument('--freeze-dinov3', action='store_true', default=True,
                        help='Freeze DINOv3 backbone during training (default: True)')
     parser.add_argument('--unfreeze-dinov3', action='store_true',
