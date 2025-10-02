@@ -43,6 +43,7 @@ def train_triple_dinov3(
     device: str = "0",
     integrate: str = "initial",  # New parameter: "initial", "nodino", "p3"
     variant: str = "s",  # YOLOv12 model variant: n, s, m, l, x
+    save_period: int = -1,  # Save weights every N epochs (-1 = only best/last)
     **kwargs
 ):
     """
@@ -66,6 +67,7 @@ def train_triple_dinov3(
             - "p3": Add DINOv3 after P3 stage instead
             - "p0p3": Dual DINOv3 integration (before backbone + after P3)
         variant: YOLOv12 model variant (n, s, m, l, x)
+        save_period: Save weights every N epochs (-1 = only best/last, saves disk space)
         **kwargs: Additional training arguments
         
     Returns:
@@ -85,6 +87,7 @@ def train_triple_dinov3(
     print(f"Batch Size: {batch_size}")
     print(f"Image Size: {imgsz}")
     print(f"Device: {device}")
+    print(f"Save Period: {'Best/Last only' if save_period == -1 else f'Every {save_period} epochs'}")
     print("-" * 60)
     
     # Step 1: Setup requirements based on integration strategy
@@ -274,7 +277,7 @@ def train_triple_dinov3(
         'imgsz': imgsz,
         'patience': patience,
         'save': True,
-        'save_period': 10,
+        'save_period': save_period,  # Save weights every N epochs (-1 = only best/last)
         'name': name,
         'verbose': True,
         'val': True,
@@ -491,6 +494,8 @@ def main():
                        help='Device to use (default: 0, use "cpu" for CPU)')
     parser.add_argument('--variant', type=str, choices=['n', 's', 'm', 'l', 'x'], default='s',
                        help='YOLOv12 model variant (default: s)')
+    parser.add_argument('--save-period', type=int, default=-1,
+                       help='Save weights every N epochs (-1 = only best/last, saves disk space)')
     parser.add_argument('--compare', action='store_true',
                        help='Compare with and without DINOv3 backbone')
     parser.add_argument('--download-only', action='store_true',
@@ -544,7 +549,8 @@ def main():
             name=args.name,
             device=args.device,
             integrate=args.integrate,
-            variant=args.variant
+            variant=args.variant,
+            save_period=args.save_period
         )
 
 if __name__ == "__main__":

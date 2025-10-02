@@ -600,6 +600,7 @@ For detailed documentation on the triple input and DINOv3 implementation, see:
 | `--batch` | int | `8` | Batch size (reduced for DINOv3 memory usage) |
 | `--device` | str | `0` | Device to use (default: `0` for GPU, `cpu`, `0,1,2,3`, etc.) |
 | `--variant` | str | `s` | YOLOv12 model variant (`n`, `s`, `m`, `l`, `x`) |
+| `--save-period` | int | `-1` | Save weights every N epochs (`-1` = only best/last, saves disk space) |
 | `--name` | str | `yolov12_triple_dinov3` | Experiment name for output directory |
 | `--patience` | int | `50` | Early stopping patience |
 
@@ -651,6 +652,16 @@ For detailed documentation on the triple input and DINOv3 implementation, see:
 | **m** | 0.50 | 1.00 | 512 | ~20M | ⚡ | Medium - good performance |
 | **l** | 1.00 | 1.00 | 512 | ~27M | ⚡ | Large - high performance |
 | **x** | 1.00 | 1.50 | 512 | ~59M | ⚡ | Extra Large - maximum performance |
+
+#### Weight Saving Options (`--save-period`)
+
+| Value | Behavior | Disk Usage | Best For |
+|-------|----------|------------|----------|
+| **-1** | Save only best & last weights | 💾 Minimal | Production training (default) |
+| **10** | Save every 10 epochs | 💾💾 Moderate | Progress monitoring |
+| **1** | Save every epoch | 💾💾💾 Maximum | Detailed analysis/debugging |
+
+**Recommendation**: Use `-1` (default) to save disk space, especially for long training runs with large models.
 
 #### Example Commands
 
@@ -715,14 +726,23 @@ python train_triple_dinov3.py \
     --batch 4 \
     --epochs 200
 
-# Fast training with nano variant
+# Fast training with nano variant (disk space optimized)
 python train_triple_dinov3.py \
     --data dataset.yaml \
     --integrate initial \
     --dinov3-size small \
     --variant n \
     --freeze-dinov3 \
-    --batch 16
+    --batch 16 \
+    --save-period -1  # Only save best/last weights
+
+# Save weights every 20 epochs (if needed for analysis)
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate initial \
+    --dinov3-size base \
+    --variant m \
+    --save-period 20
 
 # Model comparison
 python train_triple_dinov3.py \
