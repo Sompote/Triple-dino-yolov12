@@ -341,6 +341,16 @@ class DINOv3Backbone(nn.Module):
         
         # Adapt input channels if necessary
         if hasattr(self, 'input_adapter'):
+            # Handle mismatch between expected channels and actual input
+            if C != self.input_channels:
+                if C == 3 and self.input_channels == 9:
+                    # Validation/warmup with 3 channels, but model expects 9 channels
+                    # Replicate the 3 channels to create 9 channels (3x RGB repetition)
+                    x = x.repeat(1, 3, 1, 1)  # [B, 3, H, W] -> [B, 9, H, W]
+                elif C == 9 and self.input_channels == 3:
+                    # Use only first 3 channels if model expects 3 but receives 9
+                    x = x[:, :3, :, :]  # [B, 9, H, W] -> [B, 3, H, W]
+            
             x = self.input_adapter(x)
         
         # Resize to expected input size for DINOv3 if necessary
