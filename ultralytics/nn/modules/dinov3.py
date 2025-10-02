@@ -17,10 +17,11 @@ from typing import Optional, Dict, Any, Tuple, List
 
 try:
     from transformers import AutoModel, AutoImageProcessor
+    from huggingface_hub import login, HfApi
     TRANSFORMERS_AVAILABLE = True
 except ImportError:
     TRANSFORMERS_AVAILABLE = False
-    warnings.warn("transformers not available. Install with: pip install transformers")
+    warnings.warn("transformers not available. Install with: pip install transformers huggingface_hub")
 
 try:
     import timm
@@ -28,6 +29,81 @@ try:
 except ImportError:
     TIMM_AVAILABLE = False
     warnings.warn("timm not available. Install with: pip install timm")
+
+
+def setup_huggingface_auth():
+    """
+    Setup HuggingFace authentication for DINOv3 model access.
+    
+    Returns:
+        tuple: (is_authenticated, token_source)
+    """
+    import os
+    
+    # Check for HuggingFace token in various locations
+    token = None
+    token_source = None
+    
+    # Method 1: Environment variable
+    if 'HUGGINGFACE_HUB_TOKEN' in os.environ:
+        token = os.environ['HUGGINGFACE_HUB_TOKEN']
+        token_source = "environment variable"
+    elif 'HF_TOKEN' in os.environ:
+        token = os.environ['HF_TOKEN']
+        token_source = "environment variable (HF_TOKEN)"
+    
+    # Method 2: Check for existing token file
+    if not token and TRANSFORMERS_AVAILABLE:
+        try:
+            from huggingface_hub import HfFolder
+            token = HfFolder.get_token()
+            if token:
+                token_source = "saved token file"
+        except:
+            pass
+    
+    # Method 3: Try to login if token is provided
+    if token and TRANSFORMERS_AVAILABLE:
+        try:
+            login(token=token, add_to_git_credential=False)
+            print(f"✓ HuggingFace authentication successful (source: {token_source})")
+            return True, token_source
+        except Exception as e:
+            print(f"⚠️ HuggingFace authentication failed: {e}")
+            return False, token_source
+    
+    # No authentication found
+    if not token:
+        print("⚠️ No HuggingFace token found. DINOv3 models may not be accessible.")
+        print("Please set up authentication:")
+        print("  1. Get token from: https://huggingface.co/settings/tokens")
+        print("  2. Set environment variable: export HUGGINGFACE_HUB_TOKEN='your_token'")
+        print("  3. Or run: huggingface-cli login")
+        return False, "not found"
+    
+    return False, "unknown"
+
+
+def get_huggingface_token():
+    """
+    Get HuggingFace token from environment or saved location.
+    
+    Returns:
+        str or None: The HuggingFace token if found
+    """
+    import os
+    
+    # Try environment variables first
+    token = os.environ.get('HUGGINGFACE_HUB_TOKEN') or os.environ.get('HF_TOKEN')
+    
+    if not token and TRANSFORMERS_AVAILABLE:
+        try:
+            from huggingface_hub import HfFolder
+            token = HfFolder.get_token()
+        except:
+            pass
+    
+    return token
 
 
 class DINOv3Backbone(nn.Module):
@@ -95,27 +171,41 @@ class DINOv3Backbone(nn.Module):
     def _load_model(self):
         """Load DINOv3 model from HuggingFace or local path."""
         if not TRANSFORMERS_AVAILABLE:
-            raise ImportError("transformers is required for DINOv3. Install with: pip install transformers")
+            raise ImportError("transformers is required for DINOv3. Install with: pip install transformers huggingface_hub")
+        
+        # Setup HuggingFace authentication
+        auth_success, auth_source = setup_huggingface_auth()
         
         try:
             print(f"Loading DINOv3 model: {self.model_name}")
             
-            # Load model and processor
+            # Get token for authenticated requests
+            token = get_huggingface_token()
+            
+            # Load model and processor with authentication
             self.dino_model = AutoModel.from_pretrained(
                 self.model_name,
                 trust_remote_code=True,
-                torch_dtype=torch.float32
+                torch_dtype=torch.float32,
+                token=token  # Add token for authentication
             )
             
             self.processor = AutoImageProcessor.from_pretrained(
                 self.model_name,
-                trust_remote_code=True
+                trust_remote_code=True,
+                token=token  # Add token for authentication
             )
             
             print(f"✓ Successfully loaded DINOv3 model: {self.model_name}")
             
         except Exception as e:
-            print(f"Failed to load from HuggingFace, trying timm fallback: {e}")
+            print(f"Failed to load from HuggingFace: {e}")
+            if "authentication" in str(e).lower() or "token" in str(e).lower():
+                print("❌ Authentication error detected. Please check your HuggingFace token:")
+                print("  1. Get token from: https://huggingface.co/settings/tokens")
+                print("  2. Set environment variable: export HUGGINGFACE_HUB_TOKEN='your_token'")
+                print("  3. Or run: huggingface-cli login")
+            print("Trying timm fallback...")
             self._load_timm_fallback()
     
     def _load_timm_fallback(self):
@@ -555,9 +645,13 @@ def create_dinov3_backbone(
     # Model mapping for correct HuggingFace repository names
     model_configs = {
         "small": "facebook/dinov3-vits16-pretrain-lvd1689m",
+        "small_plus": "facebook/dinov3-vits16plus-pretrain-lvd1689m",
         "base": "facebook/dinov3-vitb16-pretrain-lvd1689m", 
         "large": "facebook/dinov3-vitl16-pretrain-lvd1689m",
+        "huge": "facebook/dinov3-vith16plus-pretrain-lvd1689m",
         "giant": "facebook/dinov3-vit7b16-pretrain-lvd1689m",
+        "sat_large": "facebook/dinov3-vitl16-pretrain-lvd1689m",  # Use standard large for now
+        "sat_giant": "facebook/dinov3-vit7b16-pretrain-sat493m",
     }
     
     model_name = model_configs.get(model_size, model_configs["small"])

@@ -12,6 +12,11 @@ Original YOLOv12 by [Yunjie Tian](https://sunsmarterjie.github.io/)<sup>1</sup>,
 **Enhanced with Triple Input Architecture for Civil Engineering Applications**
 
 <p align="center">
+  <img src="assets/yolov12_triple_dinov3_architecture.svg" width=100%> <br>
+  YOLOv12 Triple Input + DINOv3 Architecture for Enhanced Civil Engineering Applications
+</p>
+
+<p align="center">
   <img src="assets/tradeoff_turbo.svg" width=90%> <br>
   Comparison with popular methods in terms of latency-accuracy (left) and FLOPs-accuracy (right) trade-offs
 </p>
@@ -26,6 +31,7 @@ This repository extends YOLOv12 with **Triple Input Architecture** and **DINOv3 
 
 - **🎯 Enhanced Detection**: Process primary image + 2 detail images as 9-channel input
 - **🤖 DINOv3 Integration**: State-of-the-art vision transformer features from Meta's DINOv3
+- **🛰️ Satellite Support**: NEW satellite-trained DINOv3 variants for aerial/satellite imagery
 - **🏗️ Civil Engineering Focus**: Optimized for infrastructure monitoring and analysis
 - **🧊 Freezing Support**: Freeze DINOv3 backbone for efficient transfer learning
 - **🧠 Smart Fallback**: Automatically uses primary image if detail images are missing  
@@ -36,6 +42,7 @@ This repository extends YOLOv12 with **Triple Input Architecture** and **DINOv3 
 
 - **Multi-Image Processing**: Combines three related images (primary + 2 detail views) for comprehensive structural analysis
 - **DINOv3 Backbone**: Leverages Meta's state-of-the-art vision transformer for superior feature extraction
+- **🛰️ Satellite DINOv3**: NEW satellite-trained variants (SAT-493M dataset) for aerial and satellite imagery analysis
 - **Automatic Model Download**: DINOv3 models are downloaded automatically from HuggingFace on first use
 - **9-Channel Input**: Concatenated RGB channels from three images enhanced by DINOv3 features
 - **Independent Branch Processing**: Each image processed separately before fusion for robust detection
@@ -43,10 +50,11 @@ This repository extends YOLOv12 with **Triple Input Architecture** and **DINOv3 
 - **Feature Fusion**: Advanced feature combination for improved accuracy in infrastructure monitoring
 - **Dataset Flexibility**: Supports both single and triple input formats for various civil engineering applications
 - **Infrastructure Applications**: Optimized for crack detection, structural monitoring, and construction analysis
-- **Model Variants**: Multiple DINOv3 sizes (small, base, large) for different computational requirements
+- **Model Variants**: Multiple DINOv3 sizes (small, small+, base, large, huge, giant, **sat_large, sat_giant**) for different computational requirements
 
 ## Updates
 
+- **2025/10/02**: 🛰️ **DINOv3 Satellite Variants** added! Support for satellite-trained DINOv3 models (SAT-493M dataset) with `sat_large` (ViT-L/16, 300M params) and `sat_giant` (ViT-7B/16, 6.7B params) for enhanced aerial and satellite imagery analysis.
 - **2025/09/20**: 🎉 **Triple Input Architecture with DINOv3** released by KMUTT Civil Engineering Research Group! Process multiple images simultaneously with state-of-the-art vision transformer features for enhanced detection accuracy in civil engineering applications.
 - **2025/09/20**: 🤖 **DINOv3 Integration** - Complete implementation with HuggingFace model support, automatic downloading, and frozen backbone training.
 - **2025/09/20**: 🏗️ Optimized for infrastructure monitoring, crack detection, and structural analysis applications.
@@ -91,8 +99,17 @@ YOLOv12 surpasses all popular real-time object detectors in accuracy with compet
 | :----------------------------- | :-------------------: | :-----------------: | :-----------------:| :---------------:| :----------- |
 | YOLO12n-triple-dinov3-small    | 224                   | Small (21M)         | 23.6               | TBD               | Enhanced Infrastructure Monitoring |
 | YOLO12s-triple-dinov3-small    | 224                   | Small (21M)         | 30.2               | TBD               | Advanced Crack Detection |
+| YOLO12s-triple-dinov3-small+   | 224                   | Small+ (29M)        | 31.2               | TBD               | High-Precision Crack Detection |
 | YOLO12m-triple-dinov3-base     | 224                   | Base (86M)          | 105.7              | TBD               | Precision Structural Analysis |
-| YOLO12l-triple-dinov3-large    | 224                   | Large (304M)        | 330.6              | TBD               | Research-Grade Monitoring |
+| YOLO12l-triple-dinov3-large    | 224                   | Large (300M)        | 326.6              | TBD               | Research-Grade Monitoring |
+| YOLO12l-triple-dinov3-huge     | 224                   | Huge (840M)         | 866.6              | TBD               | Ultra-Precision Analysis |
+| YOLO12x-triple-dinov3-giant    | 224                   | Giant (6.7B)        | 6775.4             | TBD               | Research-Grade Large Infrastructure |
+
+### YOLOv12 Triple Input + DINOv3 Satellite (🛰️ NEW) - KMUTT Civil Engineering
+| Model (det)                       | size<br><sup>(pixels) | DINOv3<br><sup>Size | Dataset | params<br><sup>(M) | Applications |
+| :-------------------------------- | :-------------------: | :-----------------: | :------: | :-----------------:| :----------- |
+| YOLO12l-triple-dinov3-sat-large   | 224                   | ViT-L/16 (300M)     | SAT-493M | 326.6              | 🛰️ Satellite Infrastructure Monitoring |
+| YOLO12x-triple-dinov3-sat-giant   | 224                   | ViT-7B/16 (6.7B)    | SAT-493M | 6775.4             | 🛰️ Large-Scale Satellite Analysis |
 
 *TBD: To Be Determined after training on civil engineering datasets
 
@@ -114,6 +131,52 @@ conda activate yolov12
 # Install dependencies
 pip install -r requirements.txt
 pip install -e .
+```
+
+### 🔐 HuggingFace Authentication Setup (Required for DINOv3)
+
+DINOv3 models require HuggingFace authentication. Set up your token:
+
+```bash
+# Method 1: Environment variable (recommended)
+export HUGGINGFACE_HUB_TOKEN="your_token_here"
+
+# Method 2: Interactive login
+pip install huggingface_hub
+huggingface-cli login
+
+# Method 3: Manual token file
+echo "your_token_here" > ~/.cache/huggingface/token
+```
+
+**Get your token from:** https://huggingface.co/settings/tokens
+
+**Required permissions when creating token:**
+- ✅ Read access to contents of all repos under your personal namespace
+- ✅ Read access to contents of all public gated repos you can access
+
+**Note:** DINOv3 models will be downloaded automatically on first use if authentication is properly configured.
+
+#### Troubleshooting Authentication
+```bash
+# Test your authentication setup
+python test_hf_auth.py
+
+# Common issues and solutions:
+
+# Issue 1: Token not found
+export HUGGINGFACE_HUB_TOKEN="hf_your_token_here"
+
+# Issue 2: Invalid token
+# - Ensure token has "Read access to contents of all public gated repos"
+# - Get new token from: https://huggingface.co/settings/tokens
+
+# Issue 3: Model access denied
+# - Some DINOv3 models may require additional permissions
+# - Contact HuggingFace support if needed
+
+# Issue 4: Network/proxy issues
+export HF_HUB_OFFLINE=0  # Ensure online mode
 ```
 
 ### Standard YOLOv12 Usage
@@ -153,12 +216,39 @@ results[0].show()
 ## 🎯 Triple Input Usage
 
 ### Training with DINOv3 Backbone (Recommended)
+
+#### Step 1: Set up HuggingFace Authentication
 ```bash
-# Train with DINOv3 + Triple Input (downloads models automatically)
+# Get your token from: https://huggingface.co/settings/tokens
+export HUGGINGFACE_HUB_TOKEN="your_token_here"
+
+# Or use interactive login
+huggingface-cli login
+```
+
+#### Step 2: Train with DINOv3
+```bash
+# Standard DINOv3 integration (before backbone) 
 python train_triple_dinov3.py \
     --data your_dataset.yaml \
+    --integrate initial \
     --dinov3-size small \
     --freeze-dinov3 \
+    --epochs 100 \
+    --batch 8
+
+# No DINOv3 integration (triple input only)
+python train_triple_dinov3.py \
+    --data your_dataset.yaml \
+    --integrate nodino \
+    --epochs 100 \
+    --batch 16
+
+# DINOv3 integration after P3 stage
+python train_triple_dinov3.py \
+    --data your_dataset.yaml \
+    --integrate p3 \
+    --dinov3-size base \
     --epochs 100 \
     --batch 8
 
@@ -168,8 +258,29 @@ python train_triple_dinov3.py \
     --compare \
     --dinov3-size small
 
-# Available DINOv3 sizes: small, base, large, giant
+# Available DINOv3 sizes: small, small_plus, base, large, huge, giant, sat_large, sat_giant
+# Available integration strategies: initial, nodino, p3, p0p3
 # Models are downloaded automatically from HuggingFace on first use
+
+# 🛰️ NEW: Satellite DINOv3 Training Examples
+# Satellite large model for aerial imagery
+python train_triple_dinov3.py \
+    --data aerial_dataset.yaml \
+    --integrate initial \
+    --dinov3-size sat_large \
+    --freeze-dinov3 \
+    --epochs 100 \
+    --batch 8
+
+# Satellite giant model for large-scale satellite analysis  
+python train_triple_dinov3.py \
+    --data satellite_dataset.yaml \
+    --integrate p0p3 \
+    --dinov3-size sat_giant \
+    --freeze-dinov3 \
+    --epochs 200 \
+    --batch 4 \
+    --patience 100
 ```
 
 ### Training with Pretrained YOLOv12 Weights
@@ -367,6 +478,9 @@ class TripleInputConv(nn.Module):
 ## 🧪 Quick Verification
 
 ```bash
+# Test HuggingFace authentication
+python test_hf_auth.py
+
 # Test DINOv3 import
 python -c "from ultralytics.nn.modules.dinov3 import create_dinov3_backbone; print('DINOv3 ready')"
 
@@ -375,6 +489,27 @@ python -c "from ultralytics.nn.modules.conv import TripleInputConv; print('Tripl
 
 # Test model creation
 python -c "from ultralytics import YOLO; YOLO('ultralytics/cfg/models/v12/yolov12_triple.yaml'); print('Model creation successful')"
+```
+
+## ⚡ Quick Commands Reference
+
+```bash
+# Setup authentication
+export HUGGINGFACE_HUB_TOKEN="hf_your_token_here"
+
+# Train with DINOv3 (recommended)
+python train_triple_dinov3.py --data dataset.yaml --integrate initial --dinov3-size small
+
+# Train with satellite DINOv3 (NEW)
+python train_triple_dinov3.py --data dataset.yaml --integrate initial --dinov3-size sat_large
+
+# Train without DINOv3 (baseline)  
+python train_triple_dinov3.py --data dataset.yaml --integrate nodino --batch 16
+
+# Download DINOv3 models manually
+python download_dinov3.py --model sat_giant --test
+
+# See full CLI reference: 📋 CLI Arguments Reference section below
 ```
 
 ## 🎨 Web Demo
@@ -452,6 +587,160 @@ For detailed documentation on the triple input and DINOv3 implementation, see:
 - [load_pretrained_triple.py](load_pretrained_triple.py) - Pretrained weight loading utilities
 - [train_with_validation.py](train_with_validation.py) - Training script for training from scratch
 - [debug_triple.py](debug_triple.py) - Debug utilities
+
+## 📋 CLI Arguments Reference
+
+### `train_triple_dinov3.py` - Main Training Script
+
+#### Core Arguments
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `--data` | str | **required** | Path to dataset configuration (.yaml file) |
+| `--epochs` | int | `100` | Number of training epochs |
+| `--batch` | int | `8` | Batch size (reduced for DINOv3 memory usage) |
+| `--device` | str | `0` | Device to use (`0`, `cpu`, `0,1,2,3`, etc.) |
+| `--name` | str | `yolov12_triple_dinov3` | Experiment name for output directory |
+| `--patience` | int | `50` | Early stopping patience |
+
+#### DINOv3 Configuration
+| Argument | Type | Choices | Default | Description |
+|----------|------|---------|---------|-------------|
+| `--integrate` | str | `initial`, `nodino`, `p3`, `p0p3` | `initial` | **DINOv3 integration strategy** |
+| `--dinov3-size` | str | `small`, `small_plus`, `base`, `large`, `huge`, `giant`, `sat_large`, `sat_giant` | `small` | DINOv3 model size |
+| `--freeze-dinov3` | flag | - | `True` | Freeze DINOv3 backbone during training |
+| `--unfreeze-dinov3` | flag | - | `False` | Unfreeze DINOv3 backbone for fine-tuning |
+| `--triple-branches` | flag | - | `False` | Use separate DINOv3 branches for each input |
+
+#### Advanced Options
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `--pretrained` | str | `None` | Path to pretrained YOLOv12 model (.pt file) |
+| `--imgsz` | int | `224` | Image size (DINOv3 optimized) |
+| `--compare` | flag | `False` | Compare with and without DINOv3 backbone |
+| `--download-only` | flag | `False` | Only download DINOv3 models without training |
+
+#### Integration Strategy Details
+
+**`--integrate initial`** (Default)
+- DINOv3 processes input **before** YOLOv12 backbone
+- Uses `yolov12_triple_dinov3.yaml` configuration
+- Best for: Maximum feature enhancement from DINOv3
+
+**`--integrate nodino`**
+- **No DINOv3** integration - standard triple input only
+- Uses `yolov12_triple.yaml` configuration  
+- Best for: Baseline comparison, faster training
+
+**`--integrate p3`**
+- DINOv3 processes features **after P3 stage**
+- Uses `yolov12_triple_dinov3_p3.yaml` configuration
+- Best for: Targeted feature enhancement at specific stage
+
+**`--integrate p0p3`** (NEW)
+- **Dual DINOv3** integration at both P0 (before backbone) and P3 (after P3 stage)
+- Uses `yolov12_triple_dinov3_p0p3.yaml` configuration
+- Best for: Maximum feature enhancement with dual processing
+
+#### Example Commands
+
+```bash
+# Basic training with DINOv3 (recommended)
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate initial \
+    --dinov3-size small \
+    --freeze-dinov3
+
+# Training without DINOv3 (baseline)
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate nodino \
+    --epochs 50 \
+    --batch 16
+
+# Advanced DINOv3 training with fine-tuning
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate initial \
+    --dinov3-size base \
+    --unfreeze-dinov3 \
+    --batch 4 \
+    --epochs 200 \
+    --patience 100
+
+# P3 stage integration
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate p3 \
+    --dinov3-size large \
+    --device cpu \
+    --batch 2
+
+# Dual DINOv3 integration (P0+P3)
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate p0p3 \
+    --dinov3-size base \
+    --freeze-dinov3 \
+    --batch 4
+
+# 🛰️ Satellite DINOv3 training
+python train_triple_dinov3.py \
+    --data satellite_dataset.yaml \
+    --integrate initial \
+    --dinov3-size sat_giant \
+    --freeze-dinov3 \
+    --batch 4 \
+    --epochs 200
+
+# Model comparison
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --compare \
+    --dinov3-size sat_large
+```
+
+### `download_dinov3.py` - Model Download Utility
+
+| Argument | Type | Choices | Default | Description |
+|----------|------|---------|---------|-------------|
+| `--model` | str | `small`, `base`, `large`, `giant`, `sat_large`, `sat_giant` | `small` | DINOv3 model to download |
+| `--cache-dir` | str | `~/.cache/yolov12_dinov3` | Cache directory for models |
+| `--method` | str | `hf`, `timm`, `auto` | `auto` | Download method |
+| `--test` | flag | `False` | Test model loading after download |
+| `--all` | flag | `False` | Download all model sizes |
+| `--force` | flag | `False` | Force re-download even if cached |
+
+```bash
+# Download specific model
+python download_dinov3.py --model base --test
+
+# Download satellite models
+python download_dinov3.py --model sat_large --test
+python download_dinov3.py --model sat_giant
+
+# Download all models
+python download_dinov3.py --all --cache-dir ./models
+
+# Force re-download
+python download_dinov3.py --model small --force
+```
+
+### `test_hf_auth.py` - Authentication Test
+
+```bash
+# Test HuggingFace authentication setup
+python test_hf_auth.py
+```
+
+### Environment Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `HUGGINGFACE_HUB_TOKEN` | HuggingFace authentication token (recommended) | `hf_xxx...` |
+| `HF_TOKEN` | Alternative HuggingFace token variable | `hf_xxx...` |
+| `CUDA_VISIBLE_DEVICES` | Limit visible GPU devices | `0,1` |
+| `HF_HUB_OFFLINE` | Force offline mode | `1` |
 
 ## 🔄 Migration Guide
 

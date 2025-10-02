@@ -19,7 +19,7 @@ import torch
 import warnings
 
 try:
-    from huggingface_hub import hf_hub_download, snapshot_download
+    from huggingface_hub import hf_hub_download, snapshot_download, login, HfFolder
     from transformers import AutoModel, AutoImageProcessor
     HF_AVAILABLE = True
 except ImportError:
@@ -33,6 +33,54 @@ try:
 except ImportError:
     TIMM_AVAILABLE = False
     print("timm not available. Install with: pip install timm")
+
+
+def setup_huggingface_auth():
+    """Setup HuggingFace authentication for model downloads."""
+    if not HF_AVAILABLE:
+        return False, "huggingface_hub not available"
+    
+    import os
+    
+    # Check for HuggingFace token
+    token = os.environ.get('HUGGINGFACE_HUB_TOKEN') or os.environ.get('HF_TOKEN')
+    
+    if not token:
+        try:
+            token = HfFolder.get_token()
+        except:
+            pass
+    
+    if token:
+        try:
+            login(token=token, add_to_git_credential=False)
+            print("✓ HuggingFace authentication successful")
+            return True, "authenticated"
+        except Exception as e:
+            print(f"⚠️ HuggingFace authentication failed: {e}")
+            return False, str(e)
+    else:
+        print("⚠️ No HuggingFace token found. Some models may not be accessible.")
+        print("Set up authentication:")
+        print("  1. Get token from: https://huggingface.co/settings/tokens")
+        print("  2. export HUGGINGFACE_HUB_TOKEN='your_token'")
+        print("  3. Or run: huggingface-cli login")
+        return False, "no token"
+
+
+def get_huggingface_token():
+    """Get HuggingFace token from environment or saved location."""
+    import os
+    
+    token = os.environ.get('HUGGINGFACE_HUB_TOKEN') or os.environ.get('HF_TOKEN')
+    
+    if not token and HF_AVAILABLE:
+        try:
+            token = HfFolder.get_token()
+        except:
+            pass
+    
+    return token
 
 
 class DINOv3Downloader:
@@ -62,6 +110,18 @@ class DINOv3Downloader:
             "timm_name": "vit_huge_patch14_dinov2.lvd142m",
             "embed_dim": 1536,
             "description": "DINOv3 Giant (1.1B parameters)"
+        },
+        "sat_large": {
+            "hf_name": "facebook/dinov3-vitl16-pretrain-lvd1689m",
+            "timm_name": "vit_large_patch14_dinov2.lvd142m",
+            "embed_dim": 1024,
+            "description": "DINOv3 ViT-L/16 Satellite (300M parameters, SAT-493M dataset)"
+        },
+        "sat_giant": {
+            "hf_name": "facebook/dinov3-vit7b16-pretrain-sat493m",
+            "timm_name": "vit_huge_patch14_dinov2.lvd142m",
+            "embed_dim": 6144,
+            "description": "DINOv3 ViT-7B/16 Satellite (6,716M parameters, SAT-493M dataset)"
         }
     }
     
@@ -107,24 +167,37 @@ class DINOv3Downloader:
         config = self.MODEL_CONFIGS[model_size]
         model_name = config["hf_name"]
         
+        # Setup authentication
+        auth_success, auth_info = setup_huggingface_auth()
+        token = get_huggingface_token()
+        
         print(f"\n📥 Downloading {config['description']} from HuggingFace...")
         print(f"Model: {model_name}")
         
         try:
-            # Download the model
+            # Download the model with authentication
             model_path = snapshot_download(
                 repo_id=model_name,
                 cache_dir=self.cache_dir / "huggingface",
                 force_download=force_download,
-                resume_download=True
+                resume_download=True,
+                token=token  # Add authentication token
             )
             
             print(f"✅ Successfully downloaded to: {model_path}")
             
             # Test loading the model
             print("🧪 Testing model loading...")
-            model = AutoModel.from_pretrained(model_path, trust_remote_code=True)
-            processor = AutoImageProcessor.from_pretrained(model_path, trust_remote_code=True)
+            model = AutoModel.from_pretrained(
+                model_path, 
+                trust_remote_code=True,
+                token=token  # Add authentication token
+            )
+            processor = AutoImageProcessor.from_pretrained(
+                model_path, 
+                trust_remote_code=True,
+                token=token  # Add authentication token
+            )
             
             print(f"✅ Model loaded successfully!")
             print(f"   Config: {model.config}")
@@ -134,6 +207,11 @@ class DINOv3Downloader:
             
         except Exception as e:
             print(f"❌ Failed to download from HuggingFace: {e}")
+            if "authentication" in str(e).lower() or "token" in str(e).lower():
+                print("❌ Authentication error detected. Please check your HuggingFace token:")
+                print("  1. Get token from: https://huggingface.co/settings/tokens")
+                print("  2. Set environment variable: export HUGGINGFACE_HUB_TOKEN='your_token'")
+                print("  3. Or run: huggingface-cli login")
             return None
     
     def download_from_timm(self, model_size: str):
@@ -316,7 +394,7 @@ class DINOv3Downloader:
 
 def main():
     parser = argparse.ArgumentParser(description='Download and setup DINOv3 models for YOLOv12 Triple Input')
-    parser.add_argument('--model', type=str, choices=['small', 'base', 'large', 'giant'],
+    parser.add_argument('--model', type=str, choices=['small', 'base', 'large', 'giant', 'sat_large', 'sat_giant'],
                        help='DINOv3 model size to download')
     parser.add_argument('--all', action='store_true',
                        help='Download all available models')

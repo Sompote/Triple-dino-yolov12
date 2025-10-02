@@ -210,7 +210,9 @@ def train_triple_dinov3(
                         "base": "facebook/dinov3-vitb16-pretrain-lvd1689m",
                         "large": "facebook/dinov3-vitl16-pretrain-lvd1689m",
                         "huge": "facebook/dinov3-vith16plus-pretrain-lvd1689m",
-                        "giant": "facebook/dinov3-vit7b16-pretrain-lvd1689m"
+                        "giant": "facebook/dinov3-vit7b16-pretrain-lvd1689m",
+                        "sat_large": "facebook/dinov3-vitl16-pretrain-lvd1689m",
+                        "sat_giant": "facebook/dinov3-vit7b16-pretrain-sat493m"
                     }
                     
                     dino_model_name = model_name_map.get(dinov3_size, model_name_map["small"])
@@ -453,7 +455,7 @@ def main():
     parser = argparse.ArgumentParser(description='Train YOLOv12 Triple Input with DINOv3 backbone')
     parser.add_argument('--data', type=str, required=True,
                        help='Path to dataset configuration (.yaml file)')
-    parser.add_argument('--dinov3-size', type=str, choices=['small', 'base', 'large', 'giant'], 
+    parser.add_argument('--dinov3-size', type=str, choices=['small', 'base', 'large', 'giant', 'sat_large', 'sat_giant'], 
                        default='small', help='DINOv3 model size (default: small)')
     parser.add_argument('--freeze-dinov3', action='store_true', default=True,
                        help='Freeze DINOv3 backbone during training (default: True)')
