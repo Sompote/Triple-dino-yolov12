@@ -1586,9 +1586,26 @@ class LetterBox:
             img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
         top, bottom = int(round(dh - 0.1)) if self.center else 0, int(round(dh + 0.1))
         left, right = int(round(dw - 0.1)) if self.center else 0, int(round(dw + 0.1))
-        img = cv2.copyMakeBorder(
-            img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(114, 114, 114)
-        )  # add border
+        # Handle different channel counts for triple input compatibility
+        channels = img.shape[2] if len(img.shape) == 3 else 1
+        
+        # Use manual padding for all cases to avoid OpenCV copyMakeBorder issues with >3 channels
+        import numpy as np
+        h, w = img.shape[:2]
+        new_h, new_w = h + top + bottom, w + left + right
+        
+        # Create padded image filled with border value (114)
+        if channels == 1:
+            padded_img = np.full((new_h, new_w), 114, dtype=img.dtype)
+        else:
+            padded_img = np.full((new_h, new_w, channels), 114, dtype=img.dtype)
+        
+        # Copy original image to center of padded image
+        if channels == 1:
+            padded_img[top:top+h, left:left+w] = img
+        else:
+            padded_img[top:top+h, left:left+w] = img
+        img = padded_img
         if labels.get("ratio_pad"):
             labels["ratio_pad"] = (labels["ratio_pad"], (left, top))  # for evaluation
 
@@ -1846,8 +1863,8 @@ class Albumentations:
             T = [
                 A.Blur(p=0.01),
                 A.MedianBlur(p=0.01),
-                A.ToGray(p=0.01),
-                A.CLAHE(p=0.01),
+                # A.ToGray(p=0.01),  # Disabled for 9-channel triple input compatibility
+                # A.CLAHE(p=0.01),  # Disabled for 9-channel triple input compatibility
                 A.RandomBrightnessContrast(p=0.0),
                 A.RandomGamma(p=0.0),
                 A.ImageCompression(quality_lower=75, p=0.0),

@@ -310,6 +310,11 @@ def train_triple_dinov3(
         'flipud': 0.0,  # Disable vertical flip
         'fliplr': 0.0,  # Disable horizontal flip
         
+        # Additional safety measures for triple input
+        'close_mosaic': 0,  # Disable close mosaic augmentation
+        'bgr': 0.0,  # Disable BGR channel shuffling
+        'workers': 0,  # Disable multiprocessing workers to avoid DataLoader issues
+        
         # Additional arguments
         **kwargs
     }
