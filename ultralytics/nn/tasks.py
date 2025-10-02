@@ -66,6 +66,7 @@ from ultralytics.nn.modules import (
     DINOv3Backbone,
     DINOv3TripleBackbone,
     DINOv3BackboneWithAdapter,
+    P3FeatureEnhancer,
     create_dinov3_backbone,
     WorldDetect,
     v10Detect,
@@ -938,6 +939,8 @@ def attempt_load_one_weight(weight, device=None, inplace=True, fuse=False):
 def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
     """Parse a YOLO model.yaml dictionary into a PyTorch model."""
     import ast
+    # Ensure make_divisible is available in local scope to prevent scoping issues
+    from ultralytics.utils.ops import make_divisible
 
     # Args
     legacy = True  # backward compatibility for v3/v5/v8/v9 models
@@ -1072,20 +1075,28 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c1 = 9  # Force 9 input channels for triple input
             c2 = args[0]
             args = [c1, c2, *args[1:]]
-        elif m in {DINOv3Backbone, DINOv3TripleBackbone, DINOv3BackboneWithAdapter}:
-            # Special handling for DINOv3 backbones - output channels specified in args
-            # For DINOv3BackboneWithAdapter, always use input channels from previous layer
-            if m is DINOv3BackboneWithAdapter:
+        elif m in {DINOv3Backbone, DINOv3TripleBackbone, DINOv3BackboneWithAdapter, P3FeatureEnhancer}:
+            # Special handling for DINOv3 backbones and P3FeatureEnhancer
+            if m is P3FeatureEnhancer:
+                # P3FeatureEnhancer: simple input/output channel structure
                 c1 = ch[f]  # Always use previous layer's output channels
-            else:
-                c1 = ch[f] if f != -1 else args[1]  # input channels from previous layer or specified
-            if m is DINOv3BackboneWithAdapter:
+                c2 = args[1]  # output_channels (2nd argument)
+                # Apply variant scaling to output channels
+                c2 = make_divisible(min(c2, max_channels) * width, 8)
+                args = [c1, c2, *args[2:]]  # [input_channels, output_channels, ...]
+            elif m is DINOv3BackboneWithAdapter:
+                # For DINOv3BackboneWithAdapter, always use input channels from previous layer
+                c1 = ch[f]  # Always use previous layer's output channels
                 c2 = args[3]  # target_channels for BackboneWithAdapter (4th argument)
                 # Apply variant scaling to target_channels, same as other modules
                 c2 = make_divisible(min(c2, max_channels) * width, 8)
                 args = [args[0], c1, args[2], c2, *args[4:]]  # [model_name, input_ch, dinov3_ch, target_ch, freeze, ...]
             else:
+                # Regular DINOv3 backbones
+                c1 = ch[f] if f != -1 else args[1]  # input channels from previous layer or specified
                 c2 = args[2]  # output channels for regular backbones (3rd argument)
+                # Apply variant scaling to output channels, same as other modules
+                c2 = make_divisible(min(c2, max_channels) * width, 8)
                 args = [args[0], c1, c2, *args[3:]]  # [model_name, input_channels, output_channels, freeze, ...]
         elif m is CBFuse:
             c2 = ch[f[-1]]

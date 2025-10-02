@@ -473,6 +473,93 @@ class DINOv3Backbone(nn.Module):
         return feature_maps
 
 
+class P3FeatureEnhancer(nn.Module):
+    """
+    Feature enhancement module for P3 integration that uses conv operations
+    instead of Vision Transformer for better compatibility with conv features.
+    """
+    
+    def __init__(self, input_channels: int, output_channels: int, reduction_ratio: int = 4):
+        """
+        Initialize P3 feature enhancer.
+        
+        Args:
+            input_channels: Number of input channels from P3 stage
+            output_channels: Number of output channels for YOLOv12 compatibility
+            reduction_ratio: Channel reduction ratio for bottleneck
+        """
+        super().__init__()
+        self.input_channels = input_channels
+        self.output_channels = output_channels
+        
+        # Channel attention mechanism
+        self.global_pool = nn.AdaptiveAvgPool2d(1)
+        hidden_channels = max(input_channels // reduction_ratio, 16)
+        
+        self.channel_attention = nn.Sequential(
+            nn.Conv2d(input_channels, hidden_channels, 1, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(hidden_channels, input_channels, 1, bias=False),
+            nn.Sigmoid()
+        )
+        
+        # Spatial attention mechanism
+        self.spatial_attention = nn.Sequential(
+            nn.Conv2d(2, 1, 7, padding=3, bias=False),
+            nn.Sigmoid()
+        )
+        
+        # Feature enhancement layers
+        self.feature_enhance = nn.Sequential(
+            nn.Conv2d(input_channels, input_channels, 3, padding=1, groups=input_channels),  # Depthwise
+            nn.BatchNorm2d(input_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(input_channels, output_channels, 1),  # Pointwise
+            nn.BatchNorm2d(output_channels)
+        )
+        
+        # Residual connection if dimensions match
+        self.use_residual = (input_channels == output_channels)
+        if not self.use_residual:
+            self.residual_proj = nn.Conv2d(input_channels, output_channels, 1, bias=False)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass with attention-based feature enhancement.
+        
+        Args:
+            x: Input tensor [B, C, H, W] from P3 stage
+            
+        Returns:
+            Enhanced feature tensor [B, output_channels, H, W]
+        """
+        identity = x
+        
+        # Channel attention
+        ca_weight = self.global_pool(x)
+        ca_weight = self.channel_attention(ca_weight)
+        x = x * ca_weight
+        
+        # Spatial attention
+        avg_pool = torch.mean(x, dim=1, keepdim=True)
+        max_pool = torch.max(x, dim=1, keepdim=True)[0]
+        sa_input = torch.cat([avg_pool, max_pool], dim=1)
+        sa_weight = self.spatial_attention(sa_input)
+        x = x * sa_weight
+        
+        # Feature enhancement
+        x = self.feature_enhance(x)
+        
+        # Residual connection
+        if self.use_residual:
+            x = x + identity
+        else:
+            identity = self.residual_proj(identity)
+            x = x + identity
+        
+        return x
+
+
 class DINOv3TripleBackbone(DINOv3Backbone):
     """
     DINOv3 backbone specifically designed for triple input processing.

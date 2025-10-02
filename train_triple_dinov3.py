@@ -230,9 +230,17 @@ def train_triple_dinov3(
                         config['backbone'][0][-1][0] = dino_model_name  # Update model name
                         config['backbone'][0][-1][3] = freeze_dinov3    # Update freeze setting
                     elif integrate == "p3":
-                        # Update the P3 DINOv3 configuration (after P3 stage)
-                        config['backbone'][5][-1][0] = dino_model_name  # Update model name
-                        config['backbone'][5][-1][3] = freeze_dinov3    # Update freeze setting
+                        # Update the P3 feature enhancement configuration (using conv-based approach)
+                        # P3FeatureEnhancer has simpler args: [input_channels, output_channels]
+                        
+                        # Calculate scaled channels for P3 enhancement
+                        width_scaling = {'n': 0.25, 's': 0.5, 'm': 1.0, 'l': 1.0, 'x': 1.5}
+                        scale_factor = width_scaling.get(variant, 1.0)
+                        
+                        # P3 enhancer: receives scaled input from P3 stage, outputs base channels that will be scaled
+                        # Base 256 ensures compatibility: 256 * 0.25 = 64, 256 * 0.5 = 128, etc.
+                        # Note: YOLO parse_model will automatically set input_channels from previous layer
+                        config['backbone'][5][-1][1] = 256  # Target output channels (base, will be scaled)
                     elif integrate == "p0p3":
                         # P0P3 with adapter pattern - update model names and freeze settings
                         config['backbone'][0][-1][0] = dino_model_name  # P0 DINOv3 model name
@@ -257,7 +265,11 @@ def train_triple_dinov3(
                     
                     print(f"Using DINOv3 model: {dino_model_name}")
                     print(f"DINOv3 frozen: {freeze_dinov3}")
-                    if integrate == "p0p3":
+                    if integrate == "p3":
+                        width_scaling = {'n': 0.25, 's': 0.5, 'm': 1.0, 'l': 1.0, 'x': 1.5}
+                        scale_factor = width_scaling.get(variant, 1.0)
+                        print(f"P3 Feature Enhancement: after P3 stage (512*{scale_factor}→256*{scale_factor}), variant '{variant}' ({scale_factor}x scaling)")
+                    elif integrate == "p0p3":
                         width_scaling = {'n': 0.25, 's': 0.5, 'm': 1.0, 'l': 1.0, 'x': 1.5}
                         scale_factor = width_scaling.get(variant, 1.0)
                         print(f"Adapter-based Dual DINOv3: P0 (9→64→64*{scale_factor}) + P3 (auto→64→128*{scale_factor}), variant '{variant}' ({scale_factor}x scaling)")
