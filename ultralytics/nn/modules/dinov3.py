@@ -674,3 +674,183 @@ def create_dinov3_backbone(
             freeze=freeze,
             **kwargs
         )
+
+
+class DINOv3ChannelAdapter(nn.Module):
+    """
+    Adapter layer to bridge between fixed DINOv3 channels and scaled YOLOv12 channels.
+    
+    This solves the fundamental scaling conflict by keeping DINOv3 fixed while 
+    adapting its output to match YOLOv12's variant-scaled channel requirements.
+    """
+    
+    def __init__(
+        self, 
+        dinov3_channels: int, 
+        target_channels: int,
+        use_residual: bool = True,
+        activation: str = "ReLU"
+    ):
+        """
+        Initialize channel adapter.
+        
+        Args:
+            dinov3_channels: Fixed DINOv3 output channels
+            target_channels: Target YOLOv12 channels (after variant scaling)
+            use_residual: Whether to use residual connection when possible
+            activation: Activation function (ReLU, GELU, SiLU)
+        """
+        super().__init__()
+        
+        self.dinov3_channels = dinov3_channels
+        self.target_channels = target_channels
+        self.use_residual = use_residual and (dinov3_channels == target_channels)
+        
+        # Build adapter layers
+        if dinov3_channels == target_channels and not use_residual:
+            # No adaptation needed - pass through
+            self.adapter = nn.Identity()
+        else:
+            # Channel adaptation needed
+            layers = []
+            
+            # Main adaptation layer
+            layers.append(nn.Conv2d(dinov3_channels, target_channels, kernel_size=1, bias=False))
+            layers.append(nn.BatchNorm2d(target_channels))
+            
+            # Activation function
+            if activation == "ReLU":
+                layers.append(nn.ReLU(inplace=True))
+            elif activation == "GELU":
+                layers.append(nn.GELU())
+            elif activation == "SiLU":
+                layers.append(nn.SiLU(inplace=True))
+            
+            self.adapter = nn.Sequential(*layers)
+        
+        # Initialize weights
+        self._init_weights()
+    
+    def _init_weights(self):
+        """Initialize adapter weights."""
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass through adapter.
+        
+        Args:
+            x: Input tensor [B, dinov3_channels, H, W]
+            
+        Returns:
+            Output tensor [B, target_channels, H, W]
+        """
+        if self.use_residual:
+            # Residual connection when channels match
+            return x + self.adapter(x)
+        else:
+            # Direct adaptation
+            return self.adapter(x)
+    
+    def __repr__(self):
+        return f"DINOv3ChannelAdapter({self.dinov3_channels} → {self.target_channels})"
+
+
+class DINOv3BackboneWithAdapter(nn.Module):
+    """
+    DINOv3 backbone with built-in channel adapter for YOLOv12 variant scaling.
+    
+    This combines DINOv3Backbone with DINOv3ChannelAdapter to create a single
+    module that handles both feature extraction and channel adaptation.
+    """
+    
+    def __init__(
+        self,
+        model_name: str = "facebook/dinov3-small",
+        input_channels: int = 3,
+        dinov3_output_channels: int = 64,  # Fixed DINOv3 output
+        target_channels: int = 64,  # Target YOLOv12 channels (will be scaled)
+        freeze: bool = True,
+        **kwargs
+    ):
+        """
+        Initialize DINOv3 with adapter.
+        
+        Args:
+            model_name: HuggingFace model name
+            input_channels: Number of input channels
+            dinov3_output_channels: Fixed DINOv3 output channels (not scaled)
+            target_channels: Target YOLOv12 channels (will be scaled by variant)
+            freeze: Whether to freeze DINOv3
+            **kwargs: Additional arguments for DINOv3Backbone
+        """
+        super().__init__()
+        
+        # Fixed DINOv3 backbone (never scaled)
+        self.dinov3 = DINOv3Backbone(
+            model_name=model_name,
+            input_channels=input_channels,
+            output_channels=dinov3_output_channels,  # Fixed output
+            freeze=freeze,
+            **kwargs
+        )
+        
+        # Channel adapter (handles scaling)
+        self.adapter = DINOv3ChannelAdapter(
+            dinov3_channels=dinov3_output_channels,
+            target_channels=target_channels
+        )
+        
+        self.dinov3_output_channels = dinov3_output_channels
+        self.target_channels = target_channels
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass through DINOv3 and adapter.
+        
+        Args:
+            x: Input tensor [B, C, H, W]
+            
+        Returns:
+            Adapted features [B, target_channels, H', W']
+        """
+        # Extract fixed DINOv3 features
+        dinov3_features = self.dinov3(x)
+        
+        # Adapt channels to YOLOv12 requirements
+        adapted_features = self.adapter(dinov3_features)
+        
+        return adapted_features
+    
+    def update_target_channels(self, new_target_channels: int):
+        """
+        Update target channels for different YOLOv12 variants.
+        
+        Args:
+            new_target_channels: New target channel count
+        """
+        if new_target_channels != self.target_channels:
+            print(f"Updating adapter: {self.target_channels} → {new_target_channels} channels")
+            
+            # Create new adapter
+            self.adapter = DINOv3ChannelAdapter(
+                dinov3_channels=self.dinov3_output_channels,
+                target_channels=new_target_channels
+            )
+            self.target_channels = new_target_channels
+    
+    def train(self, mode: bool = True):
+        """Set training mode, keeping DINOv3 frozen if specified."""
+        super().train(mode)
+        self.dinov3.train(mode)
+        return self
+    
+    def __repr__(self):
+        return f"DINOv3BackboneWithAdapter(DINOv3: {self.dinov3_output_channels}, Target: {self.target_channels})"

@@ -154,8 +154,8 @@ def train_triple_dinov3(
         model_config = "ultralytics/cfg/models/v12/yolov12_triple_dinov3_p3.yaml"
         print("Using DINOv3 integration after P3 stage")
     elif integrate == "p0p3":
-        model_config = "ultralytics/cfg/models/v12/yolov12_triple_dinov3_p0p3.yaml"
-        print("Using dual DINOv3 integration (before backbone + after P3)")
+        model_config = "ultralytics/cfg/models/v12/yolov12_triple_dinov3_p0p3_adapter.yaml"
+        print("Using adapter-based dual DINOv3 integration (before backbone + after P3) - all variants")
     else:
         print(f"❌ Unknown integration strategy: {integrate}")
         print("Available options: initial, nodino, p3, p0p3")
@@ -234,23 +234,40 @@ def train_triple_dinov3(
                         config['backbone'][5][-1][0] = dino_model_name  # Update model name
                         config['backbone'][5][-1][3] = freeze_dinov3    # Update freeze setting
                     elif integrate == "p0p3":
-                        # Update both P0 and P3 DINOv3 configurations (dual DINOv3)
+                        # P0P3 with adapter pattern - update model names and freeze settings
                         config['backbone'][0][-1][0] = dino_model_name  # P0 DINOv3 model name
-                        config['backbone'][0][-1][3] = freeze_dinov3    # P0 DINOv3 freeze setting
+                        config['backbone'][0][-1][4] = freeze_dinov3    # P0 DINOv3 freeze setting
                         config['backbone'][5][-1][0] = dino_model_name  # P3 DINOv3 model name
-                        config['backbone'][5][-1][3] = freeze_dinov3    # P3 DINOv3 freeze setting
+                        config['backbone'][5][-1][4] = freeze_dinov3    # P3 DINOv3 freeze setting
+                        
+                        # Calculate scaled channels for adapters
+                        width_scaling = {'n': 0.25, 's': 0.5, 'm': 1.0, 'l': 1.0, 'x': 1.5}
+                        scale_factor = width_scaling.get(variant, 1.0)
+                        
+                        # P0 adapter: always outputs the base channel count that will be scaled by YOLO
+                        # The adapter will handle 9→64→64, then YOLO will scale the 64 to match variant
+                        config['backbone'][0][-1][3] = 64   # P0 adapter target channels (base, will be scaled)
+                        
+                        # P3 adapter: receives input from layer 4, outputs base channels that will be scaled
+                        # Ensure base channels result in multiples of 32 after scaling for ABlock compatibility
+                        # For all variants: 128 * 0.25 = 32, 128 * 0.5 = 64, 128 * 1.0 = 128, 128 * 1.5 = 192
+                        # All are multiples of 32, so 128 is a good base
+                        config['backbone'][5][-1][1] = 128   # Placeholder - will be replaced by YOLO parse_model
+                        config['backbone'][5][-1][3] = 128  # P3 adapter target channels (base, will be scaled)
                     
                     print(f"Using DINOv3 model: {dino_model_name}")
                     print(f"DINOv3 frozen: {freeze_dinov3}")
                     if integrate == "p0p3":
-                        print("Dual DINOv3 configuration: P0 (9→64 channels) + P3 (16→64 channels, 's' variant optimized)")
+                        width_scaling = {'n': 0.25, 's': 0.5, 'm': 1.0, 'l': 1.0, 'x': 1.5}
+                        scale_factor = width_scaling.get(variant, 1.0)
+                        print(f"Adapter-based Dual DINOv3: P0 (9→64→64*{scale_factor}) + P3 (auto→64→128*{scale_factor}), variant '{variant}' ({scale_factor}x scaling)")
                 
                 # Create temporary config file with variant
                 temp_config_path = f"temp_yolov12_triple_dinov3_{variant}_{dinov3_size}.yaml"
                 with open(temp_config_path, 'w') as f:
                     yaml.dump(config, f, default_flow_style=False)
                 
-                # Create model with variant scaling
+                # Create model with variant scaling - simple approach for all variants
                 model = YOLO(temp_config_path)
                 model.model.yaml['scale'] = variant  # Set the model scale
                 

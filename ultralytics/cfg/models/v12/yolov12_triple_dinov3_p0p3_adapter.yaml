@@ -1,0 +1,70 @@
+# YOLOv12 🚀, AGPL-3.0 license
+# YOLOv12 Triple Input with Adapter-based Dual DINOv3 integration (P0 + P3)
+# Uses channel adapters to bridge fixed DINOv3 with scaled YOLOv12 variants
+
+# Parameters
+nc: 80 # number of classes  
+ch: 9  # input channels for triple input
+scales: # model compound scaling constants
+  # [depth, width, max_channels]
+  n: [0.50, 0.25, 1024]
+  s: [0.50, 0.50, 1024] 
+  m: [0.50, 1.00, 512]
+  l: [1.00, 1.00, 512]
+  x: [1.00, 1.50, 512]
+
+# Dual DINOv3 configuration with adapters
+dinov3:
+  model_size: "large"
+  freeze: true
+  use_triple_branches: false
+  # Fixed DINOv3 output channels (never scaled)
+  p0_dinov3_channels: 64   # P0 DINOv3 fixed output
+  p3_dinov3_channels: 64   # P3 DINOv3 fixed output
+  # Target channels (will be scaled by variant)
+  p0_target_channels: 64   # P0 adapter target (base channels, will be scaled)
+  p3_target_channels: 128  # P3 adapter target (base channels, will be scaled)
+  image_size: 224
+  integration_points: ["p0", "p3"]
+
+# P0P3 architecture with adapter pattern
+backbone:
+  # [from, repeats, module, args]
+  
+  # P0 DINOv3 with Adapter (9-channel input → fixed 64 → scaled target)
+  - [-1, 1, DINOv3BackboneWithAdapter, ["facebook/dinov3-vitl16-pretrain-lvd1689m", 9, 64, 64, true]]   # 0-P0 DINOv3+Adapter
+  
+  # Standard backbone layers - Conv accepts P0 adapter output channels
+  - [-1, 1, Conv, [64, 3, 2]]              # 1-P1/2 (input channels will be scaled from P0 adapter)
+  - [-1, 2, C3k2, [64, False, 0.25]]       # 2
+  - [-1, 1, Conv, [128, 3, 2]]             # 3-P2/4  
+  - [-1, 2, C3k2, [128, False, 0.25]]      # 4
+  
+  # P3 DINOv3 with Adapter (scaled input → fixed 64 → base target that gets scaled)
+  - [-1, 1, DINOv3BackboneWithAdapter, ["facebook/dinov3-vitl16-pretrain-lvd1689m", 128, 64, 128, true]]  # 5-P3 DINOv3+Adapter
+  
+  # Continue backbone
+  - [-1, 1, Conv, [256, 3, 2]]             # 6-P3/8
+  - [-1, 4, A2C2f, [256, True, 4]]         # 7
+  - [-1, 1, Conv, [512, 3, 2]]             # 8-P4/16
+  - [-1, 4, A2C2f, [512, True, 1]]         # 9
+
+# Standard head
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]   # 10
+  - [[-1, 7], 1, Concat, [1]]                    # 11
+  - [-1, 2, A2C2f, [256, False, -1]]             # 12
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]   # 13  
+  - [[-1, 5], 1, Concat, [1]]                    # 14
+  - [-1, 2, A2C2f, [256, False, -1]]             # 15 (128→256 to ensure c_=32 after scaling)
+
+  - [-1, 1, Conv, [256, 3, 2]]                   # 16 (128→256 to match A2C2f output)
+  - [[-1, 12], 1, Concat, [1]]                   # 17
+  - [-1, 2, A2C2f, [256, False, -1]]             # 18
+
+  - [-1, 1, Conv, [256, 3, 2]]                   # 19
+  - [[-1, 9], 1, Concat, [1]]                    # 20
+  - [-1, 2, C3k2, [512, True]]                   # 21
+
+  - [[15, 18, 21], 1, Detect, [nc]]              # Detect(P3, P4, P5)

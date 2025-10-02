@@ -65,6 +65,7 @@ from ultralytics.nn.modules import (
     TripleInputConv,
     DINOv3Backbone,
     DINOv3TripleBackbone,
+    DINOv3BackboneWithAdapter,
     create_dinov3_backbone,
     WorldDetect,
     v10Detect,
@@ -1071,11 +1072,22 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c1 = 9  # Force 9 input channels for triple input
             c2 = args[0]
             args = [c1, c2, *args[1:]]
-        elif m in {DINOv3Backbone, DINOv3TripleBackbone}:
-            # Special handling for DINOv3 backbones - output channels specified in args[2]
-            c1 = ch[f] if f != -1 else args[1]  # input channels from previous layer or specified
-            c2 = args[2]  # output channels specified in config
-            args = [args[0], c1, c2, *args[3:]]  # [model_name, input_channels, output_channels, freeze, ...]
+        elif m in {DINOv3Backbone, DINOv3TripleBackbone, DINOv3BackboneWithAdapter}:
+            # Special handling for DINOv3 backbones - output channels specified in args
+            # For DINOv3BackboneWithAdapter, always use input channels from previous layer
+            if m is DINOv3BackboneWithAdapter:
+                c1 = ch[f]  # Always use previous layer's output channels
+            else:
+                c1 = ch[f] if f != -1 else args[1]  # input channels from previous layer or specified
+            if m is DINOv3BackboneWithAdapter:
+                c2 = args[3]  # target_channels for BackboneWithAdapter (4th argument)
+                # Apply variant scaling to target_channels, same as other modules
+                from ultralytics.utils.ops import make_divisible
+                c2 = make_divisible(min(c2, max_channels) * width, 8)
+                args = [args[0], c1, args[2], c2, *args[4:]]  # [model_name, input_ch, dinov3_ch, target_ch, freeze, ...]
+            else:
+                c2 = args[2]  # output channels for regular backbones (3rd argument)
+                args = [args[0], c1, c2, *args[3:]]  # [model_name, input_channels, output_channels, freeze, ...]
         elif m is CBFuse:
             c2 = ch[f[-1]]
         else:

@@ -79,6 +79,7 @@ from .conv import (
 from .dinov3 import (
     DINOv3Backbone,
     DINOv3TripleBackbone,
+    DINOv3BackboneWithAdapter,
     create_dinov3_backbone,
 )
 from .head import OBB, Classify, Detect, Pose, RTDETRDecoder, Segment, WorldDetect, v10Detect
@@ -171,5 +172,6 @@ __all__ = (
     "TripleInputConv",
     "DINOv3Backbone",
     "DINOv3TripleBackbone",
+    "DINOv3BackboneWithAdapter",
     "create_dinov3_backbone",
 )
