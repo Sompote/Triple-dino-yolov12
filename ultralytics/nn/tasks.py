@@ -1082,7 +1082,6 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             if m is DINOv3BackboneWithAdapter:
                 c2 = args[3]  # target_channels for BackboneWithAdapter (4th argument)
                 # Apply variant scaling to target_channels, same as other modules
-                from ultralytics.utils.ops import make_divisible
                 c2 = make_divisible(min(c2, max_channels) * width, 8)
                 args = [args[0], c1, args[2], c2, *args[4:]]  # [model_name, input_ch, dinov3_ch, target_ch, freeze, ...]
             else:
