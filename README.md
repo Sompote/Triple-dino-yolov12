@@ -598,7 +598,7 @@ For detailed documentation on the triple input and DINOv3 implementation, see:
 | `--data` | str | **required** | Path to dataset configuration (.yaml file) |
 | `--epochs` | int | `100` | Number of training epochs |
 | `--batch` | int | `8` | Batch size (reduced for DINOv3 memory usage) |
-| `--device` | str | `0` | Device to use (`0`, `cpu`, `0,1,2,3`, etc.) |
+| `--device` | str | `0` | Device to use (default: `0` for GPU, `cpu`, `0,1,2,3`, etc.) |
 | `--name` | str | `yolov12_triple_dinov3` | Experiment name for output directory |
 | `--patience` | int | `50` | Early stopping patience |
 
@@ -673,7 +673,7 @@ python train_triple_dinov3.py \
     --data dataset.yaml \
     --integrate p3 \
     --dinov3-size large \
-    --device cpu \
+    --device 0 \
     --batch 2
 
 # Dual DINOv3 integration (P0+P3)

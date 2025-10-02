@@ -40,7 +40,7 @@ def train_triple_dinov3(
     imgsz: int = 224,     # DINOv3 default size
     patience: int = 50,
     name: str = "yolov12_triple_dinov3",
-    device: str = "cpu",
+    device: str = "0",
     integrate: str = "initial",  # New parameter: "initial", "nodino", "p3"
     **kwargs
 ):
@@ -480,8 +480,8 @@ def main():
                        help='Early stopping patience (default: 50)')
     parser.add_argument('--name', type=str, default='yolov12_triple_dinov3',
                        help='Experiment name (default: yolov12_triple_dinov3)')
-    parser.add_argument('--device', type=str, default='cpu',
-                       help='Device to use (default: cpu, use "0" for GPU)')
+    parser.add_argument('--device', type=str, default='0',
+                       help='Device to use (default: 0, use "cpu" for CPU)')
     parser.add_argument('--compare', action='store_true',
                        help='Compare with and without DINOv3 backbone')
     parser.add_argument('--download-only', action='store_true',
