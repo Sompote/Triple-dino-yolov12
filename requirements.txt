@@ -1,20 +1,107 @@
-torch==2.2.2 
-torchvision==0.17.2
-flash_attn-2.7.3+cu11torch2.2cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
-timm==1.0.14
-albumentations==2.0.4
-onnx==1.14.0
-onnxruntime==1.15.1
-pycocotools==2.0.7
-PyYAML==6.0.1
-scipy==1.13.0
-onnxslim==0.1.31
-onnxruntime-gpu==1.18.0
-gradio==4.44.1
-opencv-python==4.9.0.80
-psutil==5.9.8
-py-cpuinfo==9.0.0
-huggingface-hub==0.23.2
-safetensors==0.4.3
-numpy==1.26.4
-supervision==0.22.0
+# YOLOv12 Triple Input with DINOv3 Integration - Requirements
+# Core deep learning frameworks
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+
+# Computer vision and image processing
+opencv-python>=4.8.0
+Pillow>=9.5.0
+albumentations>=1.3.0
+
+# Scientific computing
+numpy>=1.24.0
+scipy>=1.10.0
+
+# Machine learning utilities
+scikit-learn>=1.3.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Transformers and DINOv3 dependencies
+transformers>=4.35.0
+timm>=0.9.0
+huggingface-hub>=0.16.0
+safetensors>=0.3.0
+tokenizers>=0.13.0
+
+# Configuration and data handling
+PyYAML>=6.0
+pyyaml-include>=1.3.0
+omegaconf>=2.3.0
+
+# Progress bars and logging
+tqdm>=4.65.0
+tensorboard>=2.13.0
+wandb>=0.15.0
+clearml>=1.13.0
+
+# Object detection specific
+pycocotools>=2.0.6
+fiftyone>=0.21.0
+
+# ONNX support
+onnx>=1.14.0
+onnxruntime>=1.15.0
+onnxruntime-gpu>=1.15.0
+onnxslim>=0.1.30
+
+# Web interface and visualization
+gradio>=4.0.0
+streamlit>=1.25.0
+plotly>=5.15.0
+
+# System utilities
+psutil>=5.9.0
+py-cpuinfo>=9.0.0
+thop>=0.1.1
+
+# Data validation and processing
+pandas>=2.0.0
+supervision>=0.15.0
+
+# HTTP and file handling
+requests>=2.31.0
+urllib3>=2.0.0
+aiofiles>=23.0.0
+
+# Development and testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+black>=23.0.0
+flake8>=6.0.0
+isort>=5.12.0
+
+# Optional: Flash Attention for performance (if available)
+# flash-attn>=2.0.0  # Uncomment if you have compatible CUDA setup
+
+# Optional: Additional model repositories
+# diffusers>=0.21.0  # For diffusion models
+# accelerate>=0.21.0  # For training acceleration
+
+# Environment and packaging
+pip>=23.0.0
+setuptools>=68.0.0
+wheel>=0.41.0
+
+# For Jupyter notebook support (optional)
+jupyter>=1.0.0
+ipykernel>=6.25.0
+ipywidgets>=8.1.0
+
+# For advanced augmentations (optional)
+imgaug>=0.4.0
+kornia>=0.7.0
+
+# For distributed training (optional)
+deepspeed>=0.10.0
+fairscale>=0.4.13
+
+# Platform-specific optimizations
+# mkl>=2023.0.0  # Intel MKL for CPU optimization (Intel systems)
+# mkl-service>=2.4.0
+
+# Cloud storage support (optional)
+# boto3>=1.28.0  # AWS S3
+# google-cloud-storage>=2.10.0  # Google Cloud Storage
+# azure-storage-blob>=12.17.0  # Azure Blob Storage

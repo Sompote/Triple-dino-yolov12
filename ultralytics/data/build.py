@@ -91,24 +91,56 @@ def seed_worker(worker_id):  # noqa
 
 def build_yolo_dataset(cfg, img_path, batch, data, mode="train", rect=False, stride=32, multi_modal=False):
     """Build YOLO Dataset."""
-    dataset = YOLOMultiModalDataset if multi_modal else YOLODataset
-    return dataset(
-        img_path=img_path,
-        imgsz=cfg.imgsz,
-        batch_size=batch,
-        augment=mode == "train",  # augmentation
-        hyp=cfg,  # TODO: probably add a get_hyps_from_cfg function
-        rect=cfg.rect or rect,  # rectangular batches
-        cache=cfg.cache or None,
-        single_cls=cfg.single_cls or False,
-        stride=int(stride),
-        pad=0.0 if mode == "train" else 0.5,
-        prefix=colorstr(f"{mode}: "),
-        task=cfg.task,
-        classes=cfg.classes,
-        data=data,
-        fraction=cfg.fraction if mode == "train" else 1.0,
-    )
+    
+    # Check if this is a triple input dataset structure
+    from pathlib import Path
+    base_path = Path(img_path).parent.parent if Path(img_path).parent.parent.exists() else Path(img_path).parent
+    expected_folders = ["primary", "detail1", "detail2"]
+    is_triple_input = all((base_path / folder).exists() for folder in expected_folders)
+    
+    if is_triple_input:
+        # Import and use TripleInputDataset for triple input
+        from ultralytics.data.triple_dataset import TripleInputDataset
+        from ultralytics.utils import LOGGER
+        LOGGER.info(f"Triple input structure detected - using TripleInputDataset for {mode}")
+        
+        return TripleInputDataset(
+            img_path=img_path,
+            imgsz=cfg.imgsz,
+            batch_size=batch,
+            augment=mode == "train",  # augmentation
+            hyp=cfg,  # hyperparameters
+            rect=cfg.rect or rect,  # rectangular batches
+            cache=cfg.cache or None,
+            single_cls=cfg.single_cls or False,
+            stride=int(stride),
+            pad=0.0 if mode == "train" else 0.5,
+            prefix=colorstr(f"{mode}: "),
+            classes=cfg.classes,
+            fraction=cfg.fraction if mode == "train" else 1.0,
+            data=data,
+            task=getattr(cfg, 'task', 'detect'),
+        )
+    else:
+        # Use standard dataset for regular (non-triple) input
+        dataset = YOLOMultiModalDataset if multi_modal else YOLODataset
+        return dataset(
+            img_path=img_path,
+            imgsz=cfg.imgsz,
+            batch_size=batch,
+            augment=mode == "train",  # augmentation
+            hyp=cfg,  # TODO: probably add a get_hyps_from_cfg function
+            rect=cfg.rect or rect,  # rectangular batches
+            cache=cfg.cache or None,
+            single_cls=cfg.single_cls or False,
+            stride=int(stride),
+            pad=0.0 if mode == "train" else 0.5,
+            prefix=colorstr(f"{mode}: "),
+            task=cfg.task,
+            classes=cfg.classes,
+            data=data,
+            fraction=cfg.fraction if mode == "train" else 1.0,
+        )
 
 
 def build_grounding(cfg, img_path, json_file, batch, mode="train", rect=False, stride=32):
