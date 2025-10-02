@@ -42,6 +42,7 @@ def train_triple_dinov3(
     name: str = "yolov12_triple_dinov3",
     device: str = "0",
     integrate: str = "initial",  # New parameter: "initial", "nodino", "p3"
+    variant: str = "s",  # YOLOv12 model variant: n, s, m, l, x
     **kwargs
 ):
     """
@@ -64,6 +65,7 @@ def train_triple_dinov3(
             - "nodino": Don't apply DINOv3 adaptor at all
             - "p3": Add DINOv3 after P3 stage instead
             - "p0p3": Dual DINOv3 integration (before backbone + after P3)
+        variant: YOLOv12 model variant (n, s, m, l, x)
         **kwargs: Additional training arguments
         
     Returns:
@@ -73,6 +75,7 @@ def train_triple_dinov3(
     print("YOLOv12 Triple Input with DINOv3 Training")
     print("=" * 60)
     print(f"Data Config: {data_config}")
+    print(f"YOLOv12 Variant: {variant}")
     print(f"DINOv3 Size: {dinov3_size}")
     print(f"DINOv3 Integration: {integrate}")
     print(f"Freeze DINOv3: {freeze_dinov3}")
@@ -184,12 +187,14 @@ def train_triple_dinov3(
                 # Ensure input channels are set correctly for triple input
                 config['ch'] = 9  # Set input channels to 9 for triple input
                 
-                # Create temporary config file with correct settings
-                temp_config_path = f"temp_yolov12_triple_nodino.yaml"
+                # Create temporary config file with correct settings and variant
+                temp_config_path = f"temp_yolov12_triple_nodino_{variant}.yaml"
                 with open(temp_config_path, 'w') as f:
                     yaml.dump(config, f, default_flow_style=False)
                 
+                # Create model with variant scaling
                 model = YOLO(temp_config_path)
+                model.model.yaml['scale'] = variant  # Set the model scale
                 
                 # Clean up temporary file
                 Path(temp_config_path).unlink(missing_ok=True)
@@ -237,12 +242,14 @@ def train_triple_dinov3(
                     if integrate == "p0p3":
                         print("Dual DINOv3 configuration: P0 (9→64 channels) + P3 (512→256 channels)")
                 
-                # Create temporary config file
-                temp_config_path = f"temp_yolov12_triple_dinov3_{dinov3_size}.yaml"
+                # Create temporary config file with variant
+                temp_config_path = f"temp_yolov12_triple_dinov3_{variant}_{dinov3_size}.yaml"
                 with open(temp_config_path, 'w') as f:
                     yaml.dump(config, f, default_flow_style=False)
                 
+                # Create model with variant scaling
                 model = YOLO(temp_config_path)
+                model.model.yaml['scale'] = variant  # Set the model scale
                 
                 # Clean up temporary file
                 Path(temp_config_path).unlink(missing_ok=True)
@@ -482,6 +489,8 @@ def main():
                        help='Experiment name (default: yolov12_triple_dinov3)')
     parser.add_argument('--device', type=str, default='0',
                        help='Device to use (default: 0, use "cpu" for CPU)')
+    parser.add_argument('--variant', type=str, choices=['n', 's', 'm', 'l', 'x'], default='s',
+                       help='YOLOv12 model variant (default: s)')
     parser.add_argument('--compare', action='store_true',
                        help='Compare with and without DINOv3 backbone')
     parser.add_argument('--download-only', action='store_true',
@@ -534,7 +543,8 @@ def main():
             patience=args.patience,
             name=args.name,
             device=args.device,
-            integrate=args.integrate
+            integrate=args.integrate,
+            variant=args.variant
         )
 
 if __name__ == "__main__":

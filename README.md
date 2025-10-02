@@ -599,6 +599,7 @@ For detailed documentation on the triple input and DINOv3 implementation, see:
 | `--epochs` | int | `100` | Number of training epochs |
 | `--batch` | int | `8` | Batch size (reduced for DINOv3 memory usage) |
 | `--device` | str | `0` | Device to use (default: `0` for GPU, `cpu`, `0,1,2,3`, etc.) |
+| `--variant` | str | `s` | YOLOv12 model variant (`n`, `s`, `m`, `l`, `x`) |
 | `--name` | str | `yolov12_triple_dinov3` | Experiment name for output directory |
 | `--patience` | int | `50` | Early stopping patience |
 
@@ -641,6 +642,16 @@ For detailed documentation on the triple input and DINOv3 implementation, see:
 - Uses `yolov12_triple_dinov3_p0p3.yaml` configuration
 - Best for: Maximum feature enhancement with dual processing
 
+#### YOLOv12 Model Variants (`--variant`)
+
+| Variant | Depth | Width | Max Channels | Parameters | Speed | Description |
+|---------|-------|-------|--------------|------------|-------|-------------|
+| **n** | 0.50 | 0.25 | 1024 | ~2.5M | ⚡⚡⚡ | Nano - fastest inference |
+| **s** | 0.50 | 0.50 | 1024 | ~9M | ⚡⚡ | Small - balanced (default) |
+| **m** | 0.50 | 1.00 | 512 | ~20M | ⚡ | Medium - good performance |
+| **l** | 1.00 | 1.00 | 512 | ~27M | ⚡ | Large - high performance |
+| **x** | 1.00 | 1.50 | 512 | ~59M | ⚡ | Extra Large - maximum performance |
+
 #### Example Commands
 
 ```bash
@@ -649,12 +660,22 @@ python train_triple_dinov3.py \
     --data dataset.yaml \
     --integrate initial \
     --dinov3-size small \
+    --variant s \
+    --freeze-dinov3
+
+# Large YOLOv12 variant with satellite DINOv3
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate initial \
+    --dinov3-size sat_large \
+    --variant l \
     --freeze-dinov3
 
 # Training without DINOv3 (baseline)
 python train_triple_dinov3.py \
     --data dataset.yaml \
     --integrate nodino \
+    --variant s \
     --epochs 50 \
     --batch 16
 
@@ -684,20 +705,31 @@ python train_triple_dinov3.py \
     --freeze-dinov3 \
     --batch 4
 
-# 🛰️ Satellite DINOv3 training
+# 🛰️ Satellite DINOv3 training with extra large YOLOv12
 python train_triple_dinov3.py \
     --data satellite_dataset.yaml \
     --integrate initial \
     --dinov3-size sat_giant \
+    --variant x \
     --freeze-dinov3 \
     --batch 4 \
     --epochs 200
+
+# Fast training with nano variant
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate initial \
+    --dinov3-size small \
+    --variant n \
+    --freeze-dinov3 \
+    --batch 16
 
 # Model comparison
 python train_triple_dinov3.py \
     --data dataset.yaml \
     --compare \
-    --dinov3-size sat_large
+    --dinov3-size sat_large \
+    --variant m
 ```
 
 ### `download_dinov3.py` - Model Download Utility
