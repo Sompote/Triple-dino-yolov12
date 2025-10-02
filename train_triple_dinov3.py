@@ -243,7 +243,7 @@ def train_triple_dinov3(
                     print(f"Using DINOv3 model: {dino_model_name}")
                     print(f"DINOv3 frozen: {freeze_dinov3}")
                     if integrate == "p0p3":
-                        print("Dual DINOv3 configuration: P0 (9→64 channels) + P3 (64→256 channels)")
+                        print("Dual DINOv3 configuration: P0 (9→64 channels) + P3 (64→256 channels after scaling)")
                 
                 # Create temporary config file with variant
                 temp_config_path = f"temp_yolov12_triple_dinov3_{variant}_{dinov3_size}.yaml"
