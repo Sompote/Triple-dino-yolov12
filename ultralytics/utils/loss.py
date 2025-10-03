@@ -100,13 +100,16 @@ class BboxLoss(nn.Module):
         """IoU loss."""
         weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
         iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
-        loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
+        
+        # Fix: Use foreground count for proper normalization instead of target_scores_sum
+        num_pos = fg_mask.sum().clamp_(min=1)
+        loss_iou = ((1.0 - iou) * weight).sum() / num_pos
 
         # DFL loss
         if self.dfl_loss:
             target_ltrb = bbox2dist(anchor_points, target_bboxes, self.dfl_loss.reg_max - 1)
             loss_dfl = self.dfl_loss(pred_dist[fg_mask].view(-1, self.dfl_loss.reg_max), target_ltrb[fg_mask]) * weight
-            loss_dfl = loss_dfl.sum() / target_scores_sum
+            loss_dfl = loss_dfl.sum() / num_pos  # Fixed normalization
         else:
             loss_dfl = torch.tensor(0.0).to(pred_dist.device)
 
@@ -124,13 +127,16 @@ class RotatedBboxLoss(BboxLoss):
         """IoU loss."""
         weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
         iou = probiou(pred_bboxes[fg_mask], target_bboxes[fg_mask])
-        loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
+        
+        # Fix: Use foreground count for proper normalization instead of target_scores_sum
+        num_pos = fg_mask.sum().clamp_(min=1)
+        loss_iou = ((1.0 - iou) * weight).sum() / num_pos
 
         # DFL loss
         if self.dfl_loss:
             target_ltrb = bbox2dist(anchor_points, xywh2xyxy(target_bboxes[..., :4]), self.dfl_loss.reg_max - 1)
             loss_dfl = self.dfl_loss(pred_dist[fg_mask].view(-1, self.dfl_loss.reg_max), target_ltrb[fg_mask]) * weight
-            loss_dfl = loss_dfl.sum() / target_scores_sum
+            loss_dfl = loss_dfl.sum() / num_pos  # Fixed normalization
         else:
             loss_dfl = torch.tensor(0.0).to(pred_dist.device)
 
@@ -240,11 +246,15 @@ class v8DetectionLoss:
             mask_gt,
         )
 
-        target_scores_sum = max(target_scores.sum(), 1)
+        # Fix: Count only positive targets for proper normalization (exclude background images)
+        # Original issue: target_scores.sum() includes all targets across batch including backgrounds,
+        # making denominator too large and crushing loss to near-zero values
+        num_pos = fg_mask.sum().clamp_(min=1)  # Count only foreground (positive) assignments
+        target_scores_sum = max(target_scores.sum(), 1)  # Keep original for bbox loss compatibility
 
-        # Cls loss
-        # loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL way
-        loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+        # Cls loss - Use num_pos for proper normalization
+        # loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / num_pos  # VFL way
+        loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / num_pos  # BCE - Fixed normalization
 
         # Bbox loss
         if fg_mask.sum():

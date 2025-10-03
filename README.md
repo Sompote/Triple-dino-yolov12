@@ -599,7 +599,7 @@ For detailed documentation on the triple input and DINOv3 implementation, see:
 | `--epochs` | int | `100` | Number of training epochs |
 | `--batch` | int | `8` | Batch size (reduced for DINOv3 memory usage) |
 | `--device` | str | `0` | Device to use (default: `0` for GPU, `cpu`, `0,1,2,3`, etc.) |
-| `--variant` | str | `s` | YOLOv12 model variant (`n`, `s`, `m`, `l`, `x`) |
+| `1` | str | `s` | YOLOv12 model variant (`n`, `s`, `m`, `l`, `x`) |
 | `--save-period` | int | `-1` | Save weights every N epochs (`-1` = only best/last, saves disk space) |
 | `--name` | str | `yolov12_triple_dinov3` | Experiment name for output directory |
 | `--patience` | int | `50` | Early stopping patience |

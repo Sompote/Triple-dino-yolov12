@@ -13,52 +13,56 @@ scales: # model compound scaling constants, i.e. 'model=yolov12n_triple_dinov3_p
   l: [1.00, 1.00, 512]  # summary: ~XXX layers, ~XX,XXX,XXX parameters, ~XX,XXX,XXX gradients, ~XXX.X GFLOPs
   x: [1.00, 1.50, 512]  # summary: ~XXX layers, ~XX,XXX,XXX parameters, ~XX,XXX,XXX gradients, ~XXX.X GFLOPs
 
-# Dual DINOv3 configuration
+# Dual DINOv3 configuration (P0 preprocessing + P3 enhancement)
 dinov3:
   model_size: "small"        # DINOv3 model size: small, base, large, giant
   freeze: true               # Freeze DINOv3 backbone during training
   use_triple_branches: false # Use separate DINOv3 branches for each input
-  p0_output_channels: 64     # Output channels from P0 DINOv3 backbone (before backbone)
-  p3_output_channels: 128    # Output channels from P3 DINOv3 backbone (after P3)
+  p0_preprocessing: true     # Enable P0 input preprocessing (handled in training script)
+  p0_output_channels: 64     # Output channels from P0 DINOv3 preprocessing
+  p3_enhancement: true       # Enable P3 feature enhancement (in backbone)
+  p3_output_channels: 128    # Output channels from P3 feature enhancer
   image_size: 224           # Input image size for DINOv3
-  integration_points: ["p0", "p3"]  # Dual integration: before backbone + after P3
+  integration_points: ["p0", "p3"]  # P0 preprocessing + P3 backbone enhancement
 
 # YOLO12-triple backbone with Dual DINOv3 integration (P0 + P3)
+# P0 DINOv3 preprocessing will be handled in training script before backbone
+# This follows the reference repository pattern where P0 is input preprocessing
 backbone:
   # [from, repeats, module, args]
   
-  # P0 DINOv3 Feature Extraction (9-channel input → enhanced features)
-  - [-1, 1, DINOv3Backbone, ["facebook/dinov3-vits16-pretrain-lvd1689m", 9, 64, true]]  # 0-P0 DINOv3 [model_name, input_channels, output_channels, freeze]
-  - [-1, 1, Conv,  [16, 3, 2]]             # 1-P2/4
-  - [-1, 2, C3k2,  [16, False, 0.25]]      # 2
-  - [-1, 1, Conv,  [16, 3, 2]]             # 3-P3/8
-  - [-1, 2, C3k2,  [16, False, 0.25]]      # 4-P3 stage (16 channels with 's' variant scaling)
+  # Start backbone with regular Conv (input comes from P0 DINOv3 preprocessing)
+  # Input channels will be adjusted dynamically by training script based on P0 DINOv3 output
+  - [-1, 1, Conv,  [64, 3, 2]]             # 0-P1/2 (receives P0 DINOv3 preprocessed input)
+  - [-1, 2, C3k2,  [64, False, 0.25]]      # 1  
+  - [-1, 1, Conv,  [128, 3, 2]]            # 2-P2/4
+  - [-1, 2, C3k2,  [128, False, 0.25]]     # 3-P3 stage
   
-  # P3 DINOv3 Feature Enhancement (after P3 processing)
-  - [-1, 1, DINOv3Backbone, ["facebook/dinov3-vits16-pretrain-lvd1689m", 16, 64, true]]  # 5-P3 DINOv3 [model_name, input_channels, output_channels, freeze]
+  # P3 Feature Enhancement (using P3FeatureEnhancer like reference repo)
+  - [-1, 1, P3FeatureEnhancer, [128, 128]] # 4-P3 enhancement [input_channels, output_channels]
   
-  # Continue with dual-enhanced features
-  - [-1, 1, Conv,  [128, 3, 2]]             # 6-P4/16
-  - [-1, 4, A2C2f, [128, True, 4]]          # 7
-  - [-1, 1, Conv,  [256, 3, 2]]             # 8-P5/32
-  - [-1, 4, A2C2f, [256, True, 1]]         # 9
+  # Continue with enhanced features
+  - [-1, 1, Conv,  [256, 3, 2]]            # 5-P4/16
+  - [-1, 4, A2C2f, [256, True, 4]]         # 6
+  - [-1, 1, Conv,  [512, 3, 2]]            # 7-P5/32
+  - [-1, 4, A2C2f, [512, True, 1]]         # 8
 
-# YOLO12-triple head (adjusted for dual DINOv3 integration)
+# YOLO12-triple head (adjusted for corrected backbone indices)
 head:
-  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 10
-  - [[-1, 7], 1, Concat, [1]] # cat backbone P4        # 11
-  - [-1, 2, A2C2f, [128, False, -1]]                   # 12
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 9
+  - [[-1, 6], 1, Concat, [1]] # cat backbone P4        # 10
+  - [-1, 2, A2C2f, [256, False, -1]]                   # 11
 
-  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 13
-  - [[-1, 5], 1, Concat, [1]] # cat backbone P3 (dual DINOv3 enhanced)  # 14
-  - [-1, 2, A2C2f, [64, False, -1]]                   # 15
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 12
+  - [[-1, 4], 1, Concat, [1]] # cat backbone P3 (P3FeatureEnhancer enhanced)  # 13
+  - [-1, 2, A2C2f, [128, False, -1]]                   # 14
 
-  - [-1, 1, Conv, [64, 3, 2]]                         # 16
-  - [[-1, 12], 1, Concat, [1]] # cat head P4           # 17
-  - [-1, 2, A2C2f, [128, False, -1]]                   # 18
+  - [-1, 1, Conv, [128, 3, 2]]                         # 15
+  - [[-1, 11], 1, Concat, [1]] # cat head P4           # 16
+  - [-1, 2, A2C2f, [256, False, -1]]                   # 17
 
-  - [-1, 1, Conv, [128, 3, 2]]                         # 19
-  - [[-1, 9], 1, Concat, [1]] # cat head P5            # 20
-  - [-1, 2, C3k2, [256, True]]                        # 21 (P5/32-large)
+  - [-1, 1, Conv, [256, 3, 2]]                         # 18
+  - [[-1, 8], 1, Concat, [1]] # cat head P5            # 19
+  - [-1, 2, C3k2, [512, True]]                         # 20
 
-  - [[15, 18, 21], 1, Detect, [nc]]                    # Detect(P3, P4, P5) - [64, 128, 256]
+  - [[14, 17, 20], 1, Detect, [nc]]                    # Detect(P3, P4, P5)

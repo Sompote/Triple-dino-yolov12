@@ -6,16 +6,16 @@ This script trains YOLOv12 Triple Input models with DINOv3 feature extraction
 for enhanced performance in civil engineering applications.
 
 Usage:
-    # Standard DINOv3 integration (before backbone)
+    # P0 DINOv3 input preprocessing only (like reference repository)
     python train_triple_dinov3.py --data test_triple_dataset.yaml --integrate initial
     
-    # No DINOv3 integration (triple input only)
+    # No DINOv3 integration (standard triple input)
     python train_triple_dinov3.py --data test_triple_dataset.yaml --integrate nodino
     
-    # DINOv3 integration after P3 stage
+    # P3 DINOv3 feature enhancement only (after P3 stage)
     python train_triple_dinov3.py --data test_triple_dataset.yaml --integrate p3
     
-    # Dual DINOv3 integration (before backbone + after P3)
+    # Dual DINOv3 integration (P0 preprocessing + P3 enhancement)
     python train_triple_dinov3.py --data test_triple_dataset.yaml --integrate p0p3
     
     # With different DINOv3 sizes
@@ -62,10 +62,10 @@ def train_triple_dinov3(
         name: Experiment name
         device: Device to use
         integrate: DINOv3 integration strategy
-            - "initial": Add DINOv3 before backbone (default)
-            - "nodino": Don't apply DINOv3 adaptor at all
-            - "p3": Add DINOv3 after P3 stage instead
-            - "p0p3": Dual DINOv3 integration (before backbone + after P3)
+            - "initial": P0 input preprocessing only (9-channel → enhanced input)
+            - "nodino": No DINOv3 integration (standard triple input)
+            - "p3": P3 feature enhancement only (after P3 stage)
+            - "p0p3": Dual integration (P0 preprocessing + P3 enhancement)
         variant: YOLOv12 model variant (n, s, m, l, x)
         save_period: Save weights every N epochs (-1 = only best/last, saves disk space)
         **kwargs: Additional training arguments
@@ -148,8 +148,8 @@ def train_triple_dinov3(
         model_config = "ultralytics/cfg/models/v12/yolov12_triple.yaml"
         print("Using standard triple input model (no DINOv3)")
     elif integrate == "initial":
-        model_config = "ultralytics/cfg/models/v12/yolov12_triple_dinov3.yaml"
-        print("Using DINOv3 integration before backbone (initial)")
+        model_config = "ultralytics/cfg/models/v12/yolov12_triple_dinov3_p0_only.yaml"
+        print("Using DINOv3 P0-only preprocessing integration (input preprocessing before backbone)")
     elif integrate == "p3":
         model_config = "ultralytics/cfg/models/v12/yolov12_triple_dinov3_p3.yaml"
         print("Using DINOv3 integration after P3 stage")
@@ -226,9 +226,10 @@ def train_triple_dinov3(
                     dino_model_name = model_name_map.get(dinov3_size, model_name_map["small"])
                     
                     if integrate == "initial":
-                        # Update the backbone DINOv3 configuration
-                        config['backbone'][0][-1][0] = dino_model_name  # Update model name
-                        config['backbone'][0][-1][3] = freeze_dinov3    # Update freeze setting
+                        # P0-only integration: P0 preprocessing happens outside backbone
+                        # No backbone modifications needed - preprocessing will be handled separately
+                        # The backbone starts with regular Conv layer that receives P0 preprocessed input
+                        pass  # No backbone config changes needed
                     elif integrate == "p3":
                         # Update the P3 feature enhancement configuration (using conv-based approach)
                         # P3FeatureEnhancer has simpler args: [input_channels, output_channels]
@@ -285,6 +286,46 @@ def train_triple_dinov3(
                 
                 # Clean up temporary file
                 Path(temp_config_path).unlink(missing_ok=True)
+        
+        # Step 4.5: Setup P0 preprocessing if needed
+        if integrate == "initial":
+            print(f"\n🔄 Step 4.5: Setting up P0 DINOv3 preprocessing...")
+            
+            # Initialize P0 DINOv3 preprocessor
+            from ultralytics.nn.modules.dinov3 import DINOv3Backbone
+            
+            # Calculate scaled output channels for P0 preprocessor
+            width_scaling = {'n': 0.25, 's': 0.5, 'm': 1.0, 'l': 1.0, 'x': 1.5}
+            scale_factor = width_scaling.get(variant, 1.0)
+            p0_output_channels = int(64 * scale_factor)  # Base 64 channels scaled by variant
+            
+            model.p0_preprocessor = DINOv3Backbone(
+                model_name=dino_model_name,
+                input_channels=9,  # Triple input
+                output_channels=p0_output_channels,
+                freeze=freeze_dinov3,
+                image_size=224
+            ).to(device if device != 'cpu' else 'cpu')
+            
+            # Update model's first Conv layer to expect P0 preprocessor output
+            first_conv = model.model.model[0]
+            if hasattr(first_conv, 'conv'):
+                # Update input channels of first conv layer
+                original_weight = first_conv.conv.weight.data
+                first_conv.conv = torch.nn.Conv2d(
+                    p0_output_channels, 
+                    first_conv.conv.out_channels,
+                    first_conv.conv.kernel_size,
+                    first_conv.conv.stride,
+                    first_conv.conv.padding,
+                    bias=first_conv.conv.bias is not None
+                ).to(device if device != 'cpu' else 'cpu')
+                
+                # Initialize new weights (simple approach)
+                torch.nn.init.kaiming_normal_(first_conv.conv.weight, mode='fan_out', nonlinearity='relu')
+                
+            print(f"✓ P0 DINOv3 preprocessor configured: 9 → {p0_output_channels} channels")
+            print(f"✓ First backbone Conv updated: {p0_output_channels} → {first_conv.conv.out_channels} channels")
         
         print("✓ Model initialized successfully")
         
@@ -384,7 +425,46 @@ def train_triple_dinov3(
     print("Note: First epoch may be slow due to DINOv3 model download/loading")
     
     try:
-        results = model.train(**train_args)
+        # For P0 integration, we need to wrap the model to handle preprocessing
+        if integrate == "initial" and hasattr(model, 'p0_preprocessor'):
+            print("Setting up P0 preprocessing wrapper...")
+            
+            # Create wrapper class for P0 preprocessing
+            class P0PreprocessingWrapper:
+                def __init__(self, yolo_model, p0_preprocessor):
+                    self.yolo_model = yolo_model
+                    self.p0_preprocessor = p0_preprocessor
+                
+                def train(self, **kwargs):
+                    # Store original forward method
+                    original_forward = self.yolo_model.model.forward
+                    
+                    def wrapped_forward(x, *args, **kwargs):
+                        # Apply P0 preprocessing if x has 9 channels
+                        if x.shape[1] == 9:
+                            x = self.p0_preprocessor(x)
+                        return original_forward(x, *args, **kwargs)
+                    
+                    # Replace forward method temporarily
+                    self.yolo_model.model.forward = wrapped_forward
+                    
+                    try:
+                        # Run training with wrapped forward
+                        return self.yolo_model.train(**kwargs)
+                    finally:
+                        # Restore original forward method
+                        self.yolo_model.model.forward = original_forward
+                
+                def __getattr__(self, name):
+                    # Delegate all other attributes to the YOLO model
+                    return getattr(self.yolo_model, name)
+            
+            # Use wrapper for training
+            wrapper = P0PreprocessingWrapper(model, model.p0_preprocessor)
+            results = wrapper.train(**train_args)
+        else:
+            # Standard training without P0 preprocessing
+            results = model.train(**train_args)
         
         print(f"\n✅ Training completed successfully!")
         print(f"Best model saved to: runs/detect/{name}/weights/best.pt")
