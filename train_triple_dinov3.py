@@ -86,10 +86,7 @@ def train_triple_dinov3(
     print(f"Epochs: {epochs}")
     print(f"Batch Size: {batch_size}")
     print(f"Image Size: {imgsz}")
-    print(f"Device (raw): '{device}' (type: {type(device)}, length: {len(str(device))})")
-    print(f"CUDA Available: {torch.cuda.is_available()}")
-    if torch.cuda.is_available():
-        print(f"CUDA Devices: {torch.cuda.device_count()}")
+    print(f"Device: {device}")
     print(f"Save Period: {'Best/Last only' if save_period == -1 else f'Every {save_period} epochs'}")
     print("-" * 60)
     
@@ -338,7 +335,7 @@ def train_triple_dinov3(
                 # Initialize new weights (simple approach)
                 torch.nn.init.kaiming_normal_(first_conv.conv.weight, mode='fan_out', nonlinearity='relu')
                 
-            print(f"✓ P0 DINOv3 preprocessor configured: 9 → {p0_output_channels} channels (device: {actual_device})")
+            print(f"✓ P0 DINOv3 preprocessor configured: 9 → {p0_output_channels} channels")
             print(f"✓ First backbone Conv updated: {p0_output_channels} → {first_conv.conv.out_channels} channels")
         
         print("✓ Model initialized successfully")
