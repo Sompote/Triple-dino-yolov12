@@ -50,7 +50,7 @@ This repository extends YOLOv12 with **Triple Input Architecture** and **DINOv3 
 - **Feature Fusion**: Advanced feature combination for improved accuracy in infrastructure monitoring
 - **Dataset Flexibility**: Supports both single and triple input formats for various civil engineering applications
 - **Infrastructure Applications**: Optimized for crack detection, structural monitoring, and construction analysis
-- **Model Variants**: Multiple DINOv3 sizes (small, small+, base, large, huge, giant, **sat_large, sat_giant**) for different computational requirements
+- **Model Variants**: Multiple DINOv3 sizes (small, small+, base, large, giant, **sat_large, sat_giant**) for different computational requirements
 
 ## Updates
 
@@ -102,7 +102,6 @@ YOLOv12 surpasses all popular real-time object detectors in accuracy with compet
 | YOLO12s-triple-dinov3-small+   | 224                   | Small+ (29M)        | 31.2               | TBD               | High-Precision Crack Detection |
 | YOLO12m-triple-dinov3-base     | 224                   | Base (86M)          | 105.7              | TBD               | Precision Structural Analysis |
 | YOLO12l-triple-dinov3-large    | 224                   | Large (300M)        | 326.6              | TBD               | Research-Grade Monitoring |
-| YOLO12l-triple-dinov3-huge     | 224                   | Huge (840M)         | 866.6              | TBD               | Ultra-Precision Analysis |
 | YOLO12x-triple-dinov3-giant    | 224                   | Giant (6.7B)        | 6775.4             | TBD               | Research-Grade Large Infrastructure |
 
 ### YOLOv12 Triple Input + DINOv3 Satellite (🛰️ NEW) - KMUTT Civil Engineering
@@ -258,7 +257,7 @@ python train_triple_dinov3.py \
     --compare \
     --dinov3-size small
 
-# Available DINOv3 sizes: small, small_plus, base, large, huge, giant, sat_large, sat_giant
+# Available DINOv3 sizes: small, small_plus, base, large, giant, sat_large, sat_giant
 # Available integration strategies: initial, nodino, p3, p0p3
 # Models are downloaded automatically from HuggingFace on first use
 
@@ -608,7 +607,7 @@ For detailed documentation on the triple input and DINOv3 implementation, see:
 | Argument | Type | Choices | Default | Description |
 |----------|------|---------|---------|-------------|
 | `--integrate` | str | `initial`, `nodino`, `p3`, `p0p3` | `initial` | **DINOv3 integration strategy** |
-| `--dinov3-size` | str | `small`, `small_plus`, `base`, `large`, `huge`, `giant`, `sat_large`, `sat_giant` | `small` | DINOv3 model size |
+| `--dinov3-size` | str | `small`, `small_plus`, `base`, `large`, `giant`, `sat_large`, `sat_giant` | `small` | DINOv3 model size |
 | `--freeze-dinov3` | flag | - | `True` | Freeze DINOv3 backbone during training |
 | `--unfreeze-dinov3` | flag | - | `False` | Unfreeze DINOv3 backbone for fine-tuning |
 | `--triple-branches` | flag | - | `False` | Use separate DINOv3 branches for each input |
