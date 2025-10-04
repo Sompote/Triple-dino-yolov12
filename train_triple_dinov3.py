@@ -497,28 +497,81 @@ def train_triple_dinov3(
         print(f"Best model saved to: runs/detect/{name}/weights/best.pt")
         print(f"Last model saved to: runs/detect/{name}/weights/last.pt")
         
-        # Step 8: Post-training validation
-        print(f"\n📊 Step 8: Post-training validation...")
+        # Step 8: Post-training evaluation on all splits
+        print(f"\n📊 Step 8: Post-training evaluation on all splits...")
+        
+        # Helper function to evaluate on a specific split
+        def evaluate_split(split_name, model, data_config):
+            try:
+                print(f"\n  Evaluating on {split_name} set...")
+                if integrate == "initial" and hasattr(model, 'p0_preprocessor'):
+                    print(f"    ⚠️ Skipping {split_name} evaluation for P0 integration to avoid channel mismatch")
+                    return None
+                else:
+                    val_results = model.val(data=data_config, split=split_name)
+                    if hasattr(val_results, 'box'):
+                        map50 = val_results.box.map50
+                        map50_95 = val_results.box.map
+                    else:
+                        # Fallback for different result formats
+                        map50 = getattr(val_results, 'map50', 0.0)
+                        map50_95 = getattr(val_results, 'map', 0.0)
+                    
+                    print(f"    {split_name.capitalize()} mAP50: {map50:.4f}")
+                    print(f"    {split_name.capitalize()} mAP50-95: {map50_95:.4f}")
+                    return {'map50': map50, 'map50_95': map50_95}
+            except Exception as e:
+                print(f"    ⚠️ {split_name.capitalize()} evaluation failed: {e}")
+                return None
+        
+        # Evaluate on all splits
+        results_summary = {}
+        
+        # Validation set
+        val_results = evaluate_split('val', model, data_config)
+        if val_results:
+            results_summary['validation'] = val_results
+            
+        # Test set (if available)
+        test_results = evaluate_split('test', model, data_config)
+        if test_results:
+            results_summary['test'] = test_results
+            
+        # Training set evaluation (sample to avoid long computation)
         try:
+            print(f"\n  Evaluating on training set (sample)...")
             if integrate == "initial" and hasattr(model, 'p0_preprocessor'):
-                # Skip final validation for P0 models to avoid channel mismatch
-                print("⚠️ Skipping final validation for P0 integration to avoid channel mismatch")
-                print("✓ Training completed successfully. Model saved with P0 preprocessing integration.")
-                print("📝 Note: To use this model for inference, ensure you apply P0 preprocessing (9-channel input)")
-                
-                # Just report the last validation results from training
-                print(f"Last training validation results:")
-                print(f"  - mAP50: Available in training logs above")
-                print(f"  - mAP50-95: Available in training logs above")
+                print(f"    ⚠️ Skipping train evaluation for P0 integration to avoid channel mismatch")
             else:
-                # Standard validation for non-P0 models
-                val_results = model.val(data=data_config, split='val')
-                print(f"Validation mAP50: {val_results.box.map50:.4f}")
-                print(f"Validation mAP50-95: {val_results.box.map:.4f}")
+                # For training set, we might want to use a smaller sample for efficiency
+                train_results = model.val(data=data_config, split='train')
+                if hasattr(train_results, 'box'):
+                    train_map50 = train_results.box.map50
+                    train_map50_95 = train_results.box.map
+                else:
+                    train_map50 = getattr(train_results, 'map50', 0.0)
+                    train_map50_95 = getattr(train_results, 'map', 0.0)
                 
+                print(f"    Train mAP50: {train_map50:.4f}")
+                print(f"    Train mAP50-95: {train_map50_95:.4f}")
+                results_summary['train'] = {'map50': train_map50, 'map50_95': train_map50_95}
         except Exception as e:
-            print(f"⚠️ Validation failed: {e}")
-            print("This might be due to model/data compatibility issues")
+            print(f"    ⚠️ Train evaluation failed: {e}")
+        
+        # Display summary
+        print(f"\n📈 Final mAP Summary:")
+        print("=" * 50)
+        if integrate == "initial" and hasattr(model, 'p0_preprocessor'):
+            print("⚠️ P0 integration model - evaluations skipped due to channel mismatch")
+            print("✓ Training completed successfully. Check training logs for metrics.")
+        else:
+            for split, metrics in results_summary.items():
+                if metrics:
+                    print(f"{split.capitalize():>12}: mAP50={metrics['map50']:.4f}, mAP50-95={metrics['map50_95']:.4f}")
+            
+            if not results_summary:
+                print("No evaluation results available")
+        print("=" * 50)
         
         # Step 9: DINOv3 feature analysis (optional)
         print(f"\n🔍 Step 9: DINOv3 integration analysis...")
