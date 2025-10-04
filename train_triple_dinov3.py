@@ -299,13 +299,24 @@ def train_triple_dinov3(
             scale_factor = width_scaling.get(variant, 1.0)
             p0_output_channels = int(64 * scale_factor)  # Base 64 channels scaled by variant
             
+            # Determine actual device to use
+            actual_device = 'cpu'
+            if device != 'cpu' and torch.cuda.is_available():
+                try:
+                    # Test if the device is valid
+                    torch.zeros(1).to(device)
+                    actual_device = device
+                except:
+                    print(f"⚠️ Device '{device}' not available, falling back to CPU")
+                    actual_device = 'cpu'
+            
             model.p0_preprocessor = DINOv3Backbone(
                 model_name=dino_model_name,
                 input_channels=9,  # Triple input
                 output_channels=p0_output_channels,
                 freeze=freeze_dinov3,
                 image_size=224
-            ).to(device if device != 'cpu' else 'cpu')
+            ).to(actual_device)
             
             # Update model's first Conv layer to expect P0 preprocessor output
             first_conv = model.model.model[0]
@@ -319,12 +330,12 @@ def train_triple_dinov3(
                     first_conv.conv.stride,
                     first_conv.conv.padding,
                     bias=first_conv.conv.bias is not None
-                ).to(device if device != 'cpu' else 'cpu')
+                ).to(actual_device)
                 
                 # Initialize new weights (simple approach)
                 torch.nn.init.kaiming_normal_(first_conv.conv.weight, mode='fan_out', nonlinearity='relu')
                 
-            print(f"✓ P0 DINOv3 preprocessor configured: 9 → {p0_output_channels} channels")
+            print(f"✓ P0 DINOv3 preprocessor configured: 9 → {p0_output_channels} channels (device: {actual_device})")
             print(f"✓ First backbone Conv updated: {p0_output_channels} → {first_conv.conv.out_channels} channels")
         
         print("✓ Model initialized successfully")
