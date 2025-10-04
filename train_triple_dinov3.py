@@ -321,7 +321,7 @@ def train_triple_dinov3(
             
             # Create P0 preprocessor on CPU first, then move to target device
             print(f"Creating P0 DINOv3 preprocessor...")
-            model.p0_preprocessor = DINOv3Backbone(
+            p0_preprocessor = DINOv3Backbone(
                 model_name=dino_model_name,
                 input_channels=9,  # Triple input
                 output_channels=p0_output_channels,
@@ -331,7 +331,10 @@ def train_triple_dinov3(
             
             # Move to target device after creation
             print(f"Moving P0 preprocessor to {actual_device}...")
-            model.p0_preprocessor = model.p0_preprocessor.to(actual_device)
+            p0_preprocessor = p0_preprocessor.to(actual_device)
+            
+            # Assign to model after successful device movement
+            model.p0_preprocessor = p0_preprocessor
             
             # Update model's first Conv layer to expect P0 preprocessor output
             first_conv = model.model.model[0]
