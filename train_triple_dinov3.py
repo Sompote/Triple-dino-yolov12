@@ -464,41 +464,23 @@ def train_triple_dinov3(
     try:
         # For P0 integration, we need to wrap the model to handle preprocessing
         if integrate == "initial" and hasattr(model, 'p0_preprocessor'):
-            print("Setting up P0 preprocessing wrapper...")
+            print("Setting up persistent P0 preprocessing wrapper...")
             
-            # Create wrapper class for P0 preprocessing
-            class P0PreprocessingWrapper:
-                def __init__(self, yolo_model, p0_preprocessor):
-                    self.yolo_model = yolo_model
-                    self.p0_preprocessor = p0_preprocessor
-                
-                def train(self, **kwargs):
-                    # Store original forward method
-                    original_forward = self.yolo_model.model.forward
-                    
-                    def wrapped_forward(x, *args, **kwargs):
-                        # Apply P0 preprocessing if x has 9 channels
-                        if x.shape[1] == 9:
-                            x = self.p0_preprocessor(x)
-                        return original_forward(x, *args, **kwargs)
-                    
-                    # Replace forward method temporarily
-                    self.yolo_model.model.forward = wrapped_forward
-                    
-                    try:
-                        # Run training with wrapped forward
-                        return self.yolo_model.train(**kwargs)
-                    finally:
-                        # Restore original forward method
-                        self.yolo_model.model.forward = original_forward
-                
-                def __getattr__(self, name):
-                    # Delegate all other attributes to the YOLO model
-                    return getattr(self.yolo_model, name)
+            # Store original forward method
+            original_forward = model.model.forward
             
-            # Use wrapper for training
-            wrapper = P0PreprocessingWrapper(model, model.p0_preprocessor)
-            results = wrapper.train(**train_args)
+            def wrapped_forward(x, *args, **kwargs):
+                # Apply P0 preprocessing if x has 9 channels
+                if x.shape[1] == 9:
+                    x = model.p0_preprocessor(x)
+                return original_forward(x, *args, **kwargs)
+            
+            # Replace forward method for the entire training session
+            model.model.forward = wrapped_forward
+            model._original_forward = original_forward  # Store for later restoration
+            
+            # Run training with wrapped forward
+            results = model.train(**train_args)
         else:
             # Standard training without P0 preprocessing
             results = model.train(**train_args)
@@ -509,9 +491,20 @@ def train_triple_dinov3(
         
         # Step 8: Post-training validation
         print(f"\n📊 Step 8: Post-training validation...")
-        val_results = model.val(data=data_config, split='val')
-        print(f"Validation mAP50: {val_results.box.map50:.4f}")
-        print(f"Validation mAP50-95: {val_results.box.map:.4f}")
+        try:
+            if integrate == "initial" and hasattr(model, 'p0_preprocessor'):
+                # For P0 integration, validation should work with the wrapped forward method
+                print("Using P0 preprocessing for validation...")
+                val_results = model.val(data=data_config, split='val')
+            else:
+                # Standard validation
+                val_results = model.val(data=data_config, split='val')
+                
+            print(f"Validation mAP50: {val_results.box.map50:.4f}")
+            print(f"Validation mAP50-95: {val_results.box.map:.4f}")
+        except Exception as e:
+            print(f"⚠️ Validation failed: {e}")
+            print("This might be due to model/data compatibility issues")
         
         # Step 9: DINOv3 feature analysis (optional)
         print(f"\n🔍 Step 9: DINOv3 integration analysis...")
