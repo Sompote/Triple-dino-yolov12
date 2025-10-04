@@ -86,7 +86,10 @@ def train_triple_dinov3(
     print(f"Epochs: {epochs}")
     print(f"Batch Size: {batch_size}")
     print(f"Image Size: {imgsz}")
-    print(f"Device: {device}")
+    print(f"Device (raw): '{device}' (type: {type(device)}, length: {len(str(device))})")
+    print(f"CUDA Available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"CUDA Devices: {torch.cuda.device_count()}")
     print(f"Save Period: {'Best/Last only' if save_period == -1 else f'Every {save_period} epochs'}")
     print("-" * 60)
     
