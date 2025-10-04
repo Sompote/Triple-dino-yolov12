@@ -299,24 +299,39 @@ def train_triple_dinov3(
             scale_factor = width_scaling.get(variant, 1.0)
             p0_output_channels = int(64 * scale_factor)  # Base 64 channels scaled by variant
             
-            # Determine actual device to use
+            # Determine actual device to use - handle device string properly
             actual_device = 'cpu'
             if device != 'cpu' and torch.cuda.is_available():
                 try:
+                    # Convert device string to proper format
+                    if device.isdigit():
+                        test_device = f"cuda:{device}"
+                    else:
+                        test_device = device
+                    
                     # Test if the device is valid
-                    torch.zeros(1).to(device)
-                    actual_device = device
-                except:
-                    print(f"⚠️ Device '{device}' not available, falling back to CPU")
+                    torch.zeros(1).to(test_device)
+                    actual_device = test_device
+                    print(f"✓ Using GPU device: {actual_device}")
+                except Exception as e:
+                    print(f"⚠️ Device '{device}' not available ({e}), falling back to CPU")
                     actual_device = 'cpu'
+            else:
+                print(f"✓ Using CPU device")
             
+            # Create P0 preprocessor on CPU first, then move to target device
+            print(f"Creating P0 DINOv3 preprocessor...")
             model.p0_preprocessor = DINOv3Backbone(
                 model_name=dino_model_name,
                 input_channels=9,  # Triple input
                 output_channels=p0_output_channels,
                 freeze=freeze_dinov3,
                 image_size=224
-            ).to(actual_device)
+            )
+            
+            # Move to target device after creation
+            print(f"Moving P0 preprocessor to {actual_device}...")
+            model.p0_preprocessor = model.p0_preprocessor.to(actual_device)
             
             # Update model's first Conv layer to expect P0 preprocessor output
             first_conv = model.model.model[0]
@@ -330,7 +345,11 @@ def train_triple_dinov3(
                     first_conv.conv.stride,
                     first_conv.conv.padding,
                     bias=first_conv.conv.bias is not None
-                ).to(actual_device)
+                )
+                
+                # Move to target device  
+                if actual_device != 'cpu':
+                    first_conv.conv = first_conv.conv.to(actual_device)
                 
                 # Initialize new weights (simple approach)
                 torch.nn.init.kaiming_normal_(first_conv.conv.weight, mode='fan_out', nonlinearity='relu')
@@ -341,7 +360,11 @@ def train_triple_dinov3(
         print("✓ Model initialized successfully")
         
     except Exception as e:
+        import traceback
         print(f"❌ Model initialization failed: {e}")
+        print(f"Error type: {type(e).__name__}")
+        print("Full traceback:")
+        print(traceback.format_exc())
         print("This might be due to DINOv3 integration complexity")
         return None
     
