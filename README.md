@@ -587,211 +587,6 @@ For detailed documentation on the triple input and DINOv3 implementation, see:
 - [train_with_validation.py](train_with_validation.py) - Training script for training from scratch
 - [debug_triple.py](debug_triple.py) - Debug utilities
 
-## 📋 CLI Arguments Reference
-
-### `train_triple_dinov3.py` - Main Training Script
-
-#### Core Arguments
-| Argument | Type | Default | Description |
-|----------|------|---------|-------------|
-| `--data` | str | **required** | Path to dataset configuration (.yaml file) |
-| `--epochs` | int | `100` | Number of training epochs |
-| `--batch` | int | `8` | Batch size (reduced for DINOv3 memory usage) |
-| `--device` | str | `0` | Device to use (default: `0` for GPU, `cpu`, `0,1,2,3`, etc.) |
-| `1` | str | `s` | YOLOv12 model variant (`n`, `s`, `m`, `l`, `x`) |
-| `--save-period` | int | `-1` | Save weights every N epochs (`-1` = only best/last, saves disk space) |
-| `--name` | str | `yolov12_triple_dinov3` | Experiment name for output directory |
-| `--patience` | int | `50` | Early stopping patience |
-
-#### DINOv3 Configuration
-| Argument | Type | Choices | Default | Description |
-|----------|------|---------|---------|-------------|
-| `--integrate` | str | `initial`, `nodino`, `p3`, `p0p3` | `initial` | **DINOv3 integration strategy** |
-| `--dinov3-size` | str | `small`, `small_plus`, `base`, `large`, `giant`, `sat_large`, `sat_giant` | `small` | DINOv3 model size |
-| `--freeze-dinov3` | flag | - | `True` | Freeze DINOv3 backbone during training |
-| `--unfreeze-dinov3` | flag | - | `False` | Unfreeze DINOv3 backbone for fine-tuning |
-| `--triple-branches` | flag | - | `False` | Use separate DINOv3 branches for each input |
-
-#### Advanced Options
-| Argument | Type | Default | Description |
-|----------|------|---------|-------------|
-| `--pretrained` | str | `None` | Path to pretrained YOLOv12 model (.pt file) |
-| `--imgsz` | int | `224` | Image size (DINOv3 optimized) |
-| `--compare` | flag | `False` | Compare with and without DINOv3 backbone |
-| `--download-only` | flag | `False` | Only download DINOv3 models without training |
-
-#### Integration Strategy Details
-
-**`--integrate initial`** (Default)
-- DINOv3 processes input **before** YOLOv12 backbone
-- Uses `yolov12_triple_dinov3.yaml` configuration
-- Best for: Maximum feature enhancement from DINOv3
-
-**`--integrate nodino`**
-- **No DINOv3** integration - standard triple input only
-- Uses `yolov12_triple.yaml` configuration  
-- Best for: Baseline comparison, faster training
-
-**`--integrate p3`**
-- DINOv3 processes features **after P3 stage**
-- Uses `yolov12_triple_dinov3_p3.yaml` configuration
-- Best for: Targeted feature enhancement at specific stage
-
-**`--integrate p0p3`** (NEW)
-- **Dual DINOv3** integration at both P0 (before backbone) and P3 (after P3 stage)
-- Uses `yolov12_triple_dinov3_p0p3.yaml` configuration
-- Best for: Maximum feature enhancement with dual processing
-
-#### YOLOv12 Model Variants (`--variant`)
-
-| Variant | Depth | Width | Max Channels | Parameters | Speed | Description |
-|---------|-------|-------|--------------|------------|-------|-------------|
-| **n** | 0.50 | 0.25 | 1024 | ~2.5M | ⚡⚡⚡ | Nano - fastest inference |
-| **s** | 0.50 | 0.50 | 1024 | ~9M | ⚡⚡ | Small - balanced (default) |
-| **m** | 0.50 | 1.00 | 512 | ~20M | ⚡ | Medium - good performance |
-| **l** | 1.00 | 1.00 | 512 | ~27M | ⚡ | Large - high performance |
-| **x** | 1.00 | 1.50 | 512 | ~59M | ⚡ | Extra Large - maximum performance |
-
-#### Weight Saving Options (`--save-period`)
-
-| Value | Behavior | Disk Usage | Best For |
-|-------|----------|------------|----------|
-| **-1** | Save only best & last weights | 💾 Minimal | Production training (default) |
-| **10** | Save every 10 epochs | 💾💾 Moderate | Progress monitoring |
-| **1** | Save every epoch | 💾💾💾 Maximum | Detailed analysis/debugging |
-
-**Recommendation**: Use `-1` (default) to save disk space, especially for long training runs with large models.
-
-#### Example Commands
-
-```bash
-# Basic training with DINOv3 (recommended)
-python train_triple_dinov3.py \
-    --data dataset.yaml \
-    --integrate initial \
-    --dinov3-size small \
-    --variant s \
-    --freeze-dinov3
-
-# Large YOLOv12 variant with satellite DINOv3
-python train_triple_dinov3.py \
-    --data dataset.yaml \
-    --integrate initial \
-    --dinov3-size sat_large \
-    --variant l \
-    --freeze-dinov3
-
-# Training without DINOv3 (baseline)
-python train_triple_dinov3.py \
-    --data dataset.yaml \
-    --integrate nodino \
-    --variant s \
-    --epochs 50 \
-    --batch 16
-
-# Advanced DINOv3 training with fine-tuning
-python train_triple_dinov3.py \
-    --data dataset.yaml \
-    --integrate initial \
-    --dinov3-size base \
-    --unfreeze-dinov3 \
-    --batch 4 \
-    --epochs 200 \
-    --patience 100
-
-# P3 stage integration
-python train_triple_dinov3.py \
-    --data dataset.yaml \
-    --integrate p3 \
-    --dinov3-size large \
-    --device 0 \
-    --batch 2
-
-# Dual DINOv3 integration (P0+P3)
-python train_triple_dinov3.py \
-    --data dataset.yaml \
-    --integrate p0p3 \
-    --dinov3-size base \
-    --freeze-dinov3 \
-    --batch 4
-
-# 🛰️ Satellite DINOv3 training with extra large YOLOv12
-python train_triple_dinov3.py \
-    --data satellite_dataset.yaml \
-    --integrate initial \
-    --dinov3-size sat_giant \
-    --variant x \
-    --freeze-dinov3 \
-    --batch 4 \
-    --epochs 200
-
-# Fast training with nano variant (disk space optimized)
-python train_triple_dinov3.py \
-    --data dataset.yaml \
-    --integrate initial \
-    --dinov3-size small \
-    --variant n \
-    --freeze-dinov3 \
-    --batch 16 \
-    --save-period -1  # Only save best/last weights
-
-# Save weights every 20 epochs (if needed for analysis)
-python train_triple_dinov3.py \
-    --data dataset.yaml \
-    --integrate initial \
-    --dinov3-size base \
-    --variant m \
-    --save-period 20
-
-# Model comparison
-python train_triple_dinov3.py \
-    --data dataset.yaml \
-    --compare \
-    --dinov3-size sat_large \
-    --variant m
-```
-
-### `download_dinov3.py` - Model Download Utility
-
-| Argument | Type | Choices | Default | Description |
-|----------|------|---------|---------|-------------|
-| `--model` | str | `small`, `base`, `large`, `giant`, `sat_large`, `sat_giant` | `small` | DINOv3 model to download |
-| `--cache-dir` | str | `~/.cache/yolov12_dinov3` | Cache directory for models |
-| `--method` | str | `hf`, `timm`, `auto` | `auto` | Download method |
-| `--test` | flag | `False` | Test model loading after download |
-| `--all` | flag | `False` | Download all model sizes |
-| `--force` | flag | `False` | Force re-download even if cached |
-
-```bash
-# Download specific model
-python download_dinov3.py --model base --test
-
-# Download satellite models
-python download_dinov3.py --model sat_large --test
-python download_dinov3.py --model sat_giant
-
-# Download all models
-python download_dinov3.py --all --cache-dir ./models
-
-# Force re-download
-python download_dinov3.py --model small --force
-```
-
-### `test_hf_auth.py` - Authentication Test
-
-```bash
-# Test HuggingFace authentication setup
-python test_hf_auth.py
-```
-
-### Environment Variables
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `HUGGINGFACE_HUB_TOKEN` | HuggingFace authentication token (recommended) | `hf_xxx...` |
-| `HF_TOKEN` | Alternative HuggingFace token variable | `hf_xxx...` |
-| `CUDA_VISIBLE_DEVICES` | Limit visible GPU devices | `0,1` |
-| `HF_HUB_OFFLINE` | Force offline mode | `1` |
 
 ## 🔄 Migration Guide
 
@@ -906,6 +701,438 @@ This project is licensed under the AGPL-3.0 License - see the original YOLOv12 l
   archivePrefix={arXiv},
   primaryClass={cs.CV}
 }
+```
+
+---
+
+## 📋 Complete CLI Reference
+
+### `train_triple_dinov3.py` - Main Training Script
+
+The primary training script for YOLOv12 with triple input and optional DINOv3 integration.
+
+#### Core Training Arguments
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `--data` | str | **required** | Path to dataset configuration (.yaml file) |
+| `--epochs` | int | `100` | Number of training epochs |
+| `--batch` | int | `8` | Batch size (reduce for larger models or limited GPU memory) |
+| `--device` | str | `0` | GPU device(s) to use: `0`, `cpu`, or `0,1,2,3` for multi-GPU |
+| `--variant` | str | `s` | YOLOv12 model size: `n` (nano), `s` (small), `m` (medium), `l` (large), `x` (extra large) |
+| `--imgsz` | int | `224` | Input image size (224 optimized for DINOv3, 640 for standard) |
+| `--name` | str | `yolov12_triple_dinov3` | Experiment name for run directory in `runs/detect/` |
+| `--patience` | int | `50` | Early stopping patience in epochs |
+| `--save-period` | int | `-1` | Save checkpoint every N epochs (`-1` = only best/last) |
+| `--pretrained` | str | `None` | Path to pretrained YOLOv12 weights (.pt file) |
+
+#### DINOv3 Integration Arguments
+
+**Integration Strategy** (`--integrate`)
+
+Controls where and how DINOv3 is integrated into the architecture:
+
+| Value | Description | Config File | When to Use |
+|-------|-------------|-------------|-------------|
+| `initial` | DINOv3 **before** YOLOv12 backbone (P0 stage) | `yolov12_triple_dinov3.yaml` | **Default.** Maximum feature enhancement, best for most use cases |
+| `nodino` | **No DINOv3** - triple input only | `yolov12_triple.yaml` | Baseline comparison, faster training, limited GPU memory |
+| `p3` | DINOv3 **after P3 stage** | `yolov12_triple_dinov3_p3.yaml` | Targeted mid-level feature enhancement |
+| `p0p3` | **Dual DINOv3** at P0 and P3 stages | `yolov12_triple_dinov3_p0p3.yaml` | Research use, maximum enhancement (highest memory) |
+
+**DINOv3 Model Size** (`--dinov3-size`)
+
+| Size | Parameters | Input Resolution | Dataset | Best For | Memory Usage |
+|------|------------|------------------|---------|----------|--------------|
+| `small` | 21M | 224×224 | ImageNet-1K | **Default.** Balanced performance/speed | 💾 |
+| `small_plus` | 29M | 224×224 | ImageNet-1K | Improved features vs small | 💾 |
+| `base` | 86M | 224×224 | ImageNet-1K | Higher accuracy | 💾💾 |
+| `large` | 300M | 224×224 | ImageNet-1K | Research-grade accuracy | 💾💾💾 |
+| `giant` | 6.7B | 224×224 | ImageNet-1K | Maximum performance | 💾💾💾💾 |
+| `sat_large` | 300M | 224×224 | **SAT-493M** | 🛰️ Satellite/aerial imagery | 💾💾💾 |
+| `sat_giant` | 6.7B | 224×224 | **SAT-493M** | 🛰️ Large-scale satellite analysis | 💾💾💾💾 |
+
+**DINOv3 Training Options**
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `--freeze-dinov3` | flag | `True` | **Freeze** DINOv3 weights during training (recommended for transfer learning) |
+| `--unfreeze-dinov3` | flag | `False` | Allow DINOv3 fine-tuning (requires more memory and careful learning rate) |
+| `--triple-branches` | flag | `False` | Use separate DINOv3 branches for each of the 3 input images |
+
+#### YOLOv12 Model Variants (`--variant`)
+
+| Variant | Depth | Width | Max Channels | Parameters | Speed | Best For |
+|---------|-------|-------|--------------|------------|-------|----------|
+| **n** (nano) | 0.50 | 0.25 | 1024 | ~2.5M | ⚡⚡⚡ | Edge devices, real-time inference |
+| **s** (small) | 0.50 | 0.50 | 1024 | ~9M | ⚡⚡ | **Default.** Balanced performance |
+| **m** (medium) | 0.50 | 1.00 | 512 | ~20M | ⚡ | Good accuracy with reasonable speed |
+| **l** (large) | 1.00 | 1.00 | 512 | ~27M | ⚡ | High accuracy applications |
+| **x** (extra large) | 1.00 | 1.50 | 512 | ~59M | ⚡ | Maximum accuracy, research |
+
+#### Additional Options
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `--compare` | flag | `False` | Train both with and without DINOv3 for comparison |
+| `--download-only` | flag | `False` | Download DINOv3 models and exit without training |
+
+#### Example Commands
+
+```bash
+# ========================================
+# BASIC TRAINING EXAMPLES
+# ========================================
+
+# Recommended starting point - small YOLOv12 + small DINOv3
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate initial \
+    --dinov3-size small \
+    --variant s \
+    --freeze-dinov3
+
+# Baseline without DINOv3 (faster, less accurate)
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate nodino \
+    --variant s \
+    --batch 16
+
+# ========================================
+# SATELLITE/AERIAL IMAGERY
+# ========================================
+
+# Satellite imagery with sat_large DINOv3
+python train_triple_dinov3.py \
+    --data satellite_dataset.yaml \
+    --integrate initial \
+    --dinov3-size sat_large \
+    --variant l \
+    --freeze-dinov3 \
+    --epochs 100
+
+# Large-scale satellite with sat_giant DINOv3
+python train_triple_dinov3.py \
+    --data satellite_dataset.yaml \
+    --integrate initial \
+    --dinov3-size sat_giant \
+    --variant x \
+    --freeze-dinov3 \
+    --batch 4 \
+    --epochs 200
+
+# ========================================
+# DIFFERENT INTEGRATION STRATEGIES
+# ========================================
+
+# P3 integration (DINOv3 after P3 stage)
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate p3 \
+    --dinov3-size base \
+    --variant m
+
+# Dual P0+P3 integration (maximum enhancement)
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate p0p3 \
+    --dinov3-size small \
+    --variant s \
+    --batch 4
+
+# ========================================
+# DIFFERENT YOLOV12 VARIANTS
+# ========================================
+
+# Nano variant (fastest inference)
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate initial \
+    --dinov3-size small \
+    --variant n \
+    --batch 16
+
+# Extra large variant (maximum accuracy)
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate initial \
+    --dinov3-size large \
+    --variant x \
+    --batch 4 \
+    --epochs 200
+
+# ========================================
+# DINOV3 SIZE VARIATIONS
+# ========================================
+
+# Small+ DINOv3 (better than small)
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate initial \
+    --dinov3-size small_plus \
+    --variant s
+
+# Base DINOv3 (good accuracy)
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate initial \
+    --dinov3-size base \
+    --variant m \
+    --batch 6
+
+# Large DINOv3 (research-grade)
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate initial \
+    --dinov3-size large \
+    --variant l \
+    --batch 2
+
+# Giant DINOv3 (maximum performance)
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate initial \
+    --dinov3-size giant \
+    --variant x \
+    --batch 1 \
+    --epochs 300
+
+# ========================================
+# FINE-TUNING & ADVANCED
+# ========================================
+
+# Fine-tune DINOv3 (unfreeze backbone)
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate initial \
+    --dinov3-size base \
+    --unfreeze-dinov3 \
+    --batch 4 \
+    --epochs 200 \
+    --patience 100
+
+# Load pretrained YOLOv12 weights
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --pretrained yolov12s.pt \
+    --integrate initial \
+    --dinov3-size small
+
+# Use separate DINOv3 branches per input
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate initial \
+    --dinov3-size small \
+    --triple-branches
+
+# ========================================
+# DISK SPACE & CHECKPOINT MANAGEMENT
+# ========================================
+
+# Default - save only best/last (minimal disk usage)
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate initial \
+    --dinov3-size small \
+    --save-period -1
+
+# Save checkpoints every 20 epochs
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate initial \
+    --dinov3-size base \
+    --save-period 20
+
+# ========================================
+# MULTI-GPU TRAINING
+# ========================================
+
+# Train on multiple GPUs
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --integrate initial \
+    --dinov3-size small \
+    --device 0,1,2,3 \
+    --batch 32
+
+# ========================================
+# MODEL COMPARISON
+# ========================================
+
+# Compare with and without DINOv3
+python train_triple_dinov3.py \
+    --data dataset.yaml \
+    --compare \
+    --dinov3-size small \
+    --variant s
+```
+
+---
+
+### `download_dinov3.py` - DINOv3 Model Downloader
+
+Download DINOv3 models manually (optional, as training script downloads automatically).
+
+#### Arguments
+
+| Argument | Type | Choices | Default | Description |
+|----------|------|---------|---------|-------------|
+| `--model` | str | `small`, `small_plus`, `base`, `large`, `giant`, `sat_large`, `sat_giant` | `small` | DINOv3 model size to download |
+| `--cache-dir` | str | - | `~/.cache/yolov12_dinov3` | Directory to cache downloaded models |
+| `--method` | str | `hf`, `timm`, `auto` | `auto` | Download method (HuggingFace, timm, or auto-select) |
+| `--test` | flag | - | `False` | Test model loading after download |
+| `--all` | flag | - | `False` | Download all available DINOv3 models |
+| `--force` | flag | - | `False` | Force re-download even if model exists in cache |
+
+#### Examples
+
+```bash
+# Download and test a specific model
+python download_dinov3.py --model base --test
+
+# Download satellite models
+python download_dinov3.py --model sat_large --test
+python download_dinov3.py --model sat_giant
+
+# Download all models to custom directory
+python download_dinov3.py --all --cache-dir ./my_models
+
+# Force re-download with specific method
+python download_dinov3.py --model small --force --method hf
+```
+
+---
+
+### `test_hf_auth.py` - HuggingFace Authentication Tester
+
+Test your HuggingFace authentication setup before training.
+
+#### Usage
+
+```bash
+# Test authentication
+python test_hf_auth.py
+
+# Expected output if successful:
+# ✓ HuggingFace token found
+# ✓ Token is valid
+# ✓ Can access gated models
+```
+
+---
+
+### Environment Variables
+
+| Variable | Description | Example | Required |
+|----------|-------------|---------|----------|
+| `HUGGINGFACE_HUB_TOKEN` | HuggingFace API token for model downloads | `hf_xxxxxxxxxxxxx` | **Yes** (for DINOv3) |
+| `HF_TOKEN` | Alternative HuggingFace token variable | `hf_xxxxxxxxxxxxx` | No |
+| `CUDA_VISIBLE_DEVICES` | Limit visible GPU devices to script | `0,1` | No |
+| `HF_HUB_OFFLINE` | Force offline mode (use cached models only) | `1` | No |
+
+#### Setting Environment Variables
+
+```bash
+# Method 1: Export in shell (recommended for sessions)
+export HUGGINGFACE_HUB_TOKEN="hf_your_token_here"
+
+# Method 2: Add to ~/.bashrc or ~/.zshrc (permanent)
+echo 'export HUGGINGFACE_HUB_TOKEN="hf_your_token_here"' >> ~/.bashrc
+source ~/.bashrc
+
+# Method 3: Inline with command (one-time use)
+HUGGINGFACE_HUB_TOKEN="hf_your_token_here" python train_triple_dinov3.py --data dataset.yaml
+
+# Limit GPUs
+export CUDA_VISIBLE_DEVICES=0,1
+```
+
+---
+
+### Quick Reference Card
+
+```bash
+# ========================================
+# MOST COMMON COMMANDS
+# ========================================
+
+# 1. Basic training with DINOv3
+python train_triple_dinov3.py --data dataset.yaml --integrate initial --dinov3-size small
+
+# 2. Satellite imagery training
+python train_triple_dinov3.py --data dataset.yaml --integrate initial --dinov3-size sat_large
+
+# 3. Baseline without DINOv3
+python train_triple_dinov3.py --data dataset.yaml --integrate nodino --batch 16
+
+# 4. High accuracy with large models
+python train_triple_dinov3.py --data dataset.yaml --integrate initial --dinov3-size base --variant l
+
+# 5. Download models only
+python download_dinov3.py --model base --test
+
+# 6. Test authentication
+python test_hf_auth.py
+```
+
+---
+
+### Integration Strategy Selection Guide
+
+Choose the right integration strategy for your use case:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     INTEGRATION STRATEGY                    │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  initial (DEFAULT)                                          │
+│  ├─ DINOv3 before backbone (P0)                            │
+│  ├─ Best for: General use, maximum enhancement             │
+│  └─ Use: --integrate initial                               │
+│                                                             │
+│  nodino                                                     │
+│  ├─ No DINOv3 integration                                  │
+│  ├─ Best for: Baseline, faster training, limited GPU       │
+│  └─ Use: --integrate nodino                                │
+│                                                             │
+│  p3                                                         │
+│  ├─ DINOv3 after P3 stage                                  │
+│  ├─ Best for: Mid-level feature enhancement                │
+│  └─ Use: --integrate p3                                    │
+│                                                             │
+│  p0p3                                                       │
+│  ├─ Dual DINOv3 at P0 and P3                               │
+│  ├─ Best for: Research, maximum enhancement                │
+│  └─ Use: --integrate p0p3                                  │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### DINOv3 Size Selection Guide
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                        DINOV3 SIZE                               │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  STANDARD MODELS (ImageNet-1K trained)                          │
+│  ├─ small (21M)          → Default, best balance                │
+│  ├─ small_plus (29M)     → Better features than small           │
+│  ├─ base (86M)           → Good accuracy                         │
+│  ├─ large (300M)         → Research-grade                        │
+│  └─ giant (6.7B)         → Maximum performance                   │
+│                                                                  │
+│  SATELLITE MODELS (SAT-493M trained)                            │
+│  ├─ sat_large (300M)     → Aerial/satellite imagery             │
+│  └─ sat_giant (6.7B)     → Large-scale satellite analysis       │
+│                                                                  │
+│  Selection tips:                                                │
+│  • Start with 'small' for experimentation                       │
+│  • Use 'sat_large' or 'sat_giant' for satellite/aerial data    │
+│  • Increase size if you have GPU memory and need accuracy      │
+│  • Larger models require smaller batch sizes                    │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
